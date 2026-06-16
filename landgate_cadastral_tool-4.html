@@ -1,0 +1,2672 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Landgate Cadastral Extract</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500&family=IBM+Plex+Sans:wght@300;400;500;600&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.css"/>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.js"></script>
+<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/leaflet.draw/1.0.4/leaflet.draw.css"/>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/leaflet.draw/1.0.4/leaflet.draw.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/proj4js/2.9.2/proj4.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js"></script>
+
+<style>
+  /* ── Tokens ──────────────────────────────────────────────── */
+  :root {
+    --red:      #C0392B;
+    --red-dim:  #8B2820;
+    --sand:     #E8DCC8;
+    --sand-mid: #D4C4A8;
+    --ink:      #1A1A1A;
+    --ink-mid:  #2D2D2D;
+    --ink-soft: #4A4A4A;
+    --rule:     #3A3A3A;
+    --mono: 'IBM Plex Mono', monospace;
+    --sans: 'IBM Plex Sans', sans-serif;
+  }
+
+  *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+  body {
+    font-family: var(--sans);
+    background: var(--ink);
+    color: var(--sand);
+    height: 100dvh;
+    display: grid;
+    grid-template-rows: auto 1fr;
+    overflow: hidden;
+  }
+
+  /* ── Header ─────────────────────────────────────────────── */
+  header {
+    display: flex;
+    align-items: center;
+    gap: 16px;
+    padding: 12px 20px;
+    border-bottom: 1px solid var(--rule);
+    background: var(--ink-mid);
+  }
+  .logo-mark {
+    width: 32px; height: 32px;
+    background: var(--red);
+    display: grid; place-items: center;
+    flex-shrink: 0;
+  }
+  .logo-mark svg { width: 18px; height: 18px; fill: var(--sand); }
+  .logo-text { line-height: 1.15; }
+  .logo-text strong {
+    font-size: 13px; font-weight: 600; letter-spacing: 0.08em;
+    text-transform: uppercase; color: var(--sand);
+  }
+  .logo-text span {
+    display: block; font-size: 10px; font-weight: 300;
+    color: var(--sand-mid); letter-spacing: 0.06em; text-transform: uppercase;
+  }
+  .header-badge {
+    margin-left: auto;
+    font-family: var(--mono);
+    font-size: 10px;
+    color: var(--sand-mid);
+    border: 1px solid var(--rule);
+    padding: 3px 8px;
+  }
+
+  /* ── Main layout ─────────────────────────────────────────── */
+  main {
+    display: grid;
+    grid-template-columns: 340px 1fr;
+    overflow: hidden;
+  }
+
+  /* ── Panel ───────────────────────────────────────────────── */
+  #panel {
+    background: var(--ink-mid);
+    border-right: 1px solid var(--rule);
+    overflow-y: auto;
+    display: flex;
+    flex-direction: column;
+  }
+
+  .panel-section {
+    padding: 16px 20px;
+    border-bottom: 1px solid var(--rule);
+  }
+  .panel-section:last-child { border-bottom: none; flex: 1; }
+
+  .section-label {
+    font-family: var(--mono);
+    font-size: 10px;
+    letter-spacing: 0.1em;
+    text-transform: uppercase;
+    color: var(--red);
+    margin-bottom: 12px;
+  }
+
+  label {
+    display: block;
+    font-size: 11px;
+    font-weight: 500;
+    letter-spacing: 0.04em;
+    color: var(--sand-mid);
+    text-transform: uppercase;
+    margin-bottom: 5px;
+    margin-top: 12px;
+  }
+  label:first-of-type { margin-top: 0; }
+
+  input[type="text"], input[type="number"], select {
+    width: 100%;
+    background: var(--ink);
+    border: 1px solid var(--rule);
+    color: var(--sand);
+    font-family: var(--mono);
+    font-size: 12px;
+    padding: 8px 10px;
+    outline: none;
+    transition: border-color 0.15s;
+    -webkit-appearance: none;
+    appearance: none;
+  }
+  input[type="text"]:focus, input[type="number"]:focus, select:focus {
+    border-color: var(--red);
+  }
+  select { cursor: pointer; }
+  select option { background: var(--ink-mid); }
+
+  .input-row { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
+
+  .radio-group {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 1px;
+    background: var(--rule);
+    border: 1px solid var(--rule);
+  }
+  .radio-group label {
+    margin: 0;
+    background: var(--ink);
+    cursor: pointer;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    padding: 8px 4px;
+    font-size: 11px;
+    text-transform: uppercase;
+    letter-spacing: 0.04em;
+    color: var(--sand-mid);
+    transition: background 0.1s, color 0.1s;
+    user-select: none;
+  }
+  .radio-group input[type="radio"] { display: none; }
+  .radio-group input[type="radio"]:checked + label {
+    background: var(--red);
+    color: var(--sand);
+  }
+
+  /* ── Location tabs ───────────────────────────────────────── */
+  .tab-bar {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 1px;
+    background: var(--rule);
+    border: 1px solid var(--rule);
+    margin-bottom: 12px;
+  }
+  .tab-btn {
+    background: var(--ink);
+    border: none;
+    color: var(--sand-mid);
+    font-family: var(--mono);
+    font-size: 11px;
+    letter-spacing: 0.06em;
+    text-transform: uppercase;
+    padding: 8px;
+    cursor: pointer;
+    transition: background 0.1s, color 0.1s;
+  }
+  .tab-btn.active { background: var(--ink-mid); color: var(--sand); }
+  .tab-panel { display: none; }
+  .tab-panel.active { display: block; }
+
+  /* ── Run button ──────────────────────────────────────────── */
+  #run-btn {
+    width: 100%;
+    background: var(--red);
+    border: none;
+    color: var(--sand);
+    font-family: var(--mono);
+    font-size: 12px;
+    font-weight: 500;
+    letter-spacing: 0.1em;
+    text-transform: uppercase;
+    padding: 13px;
+    cursor: pointer;
+    transition: background 0.15s;
+    margin-top: 4px;
+  }
+  #run-btn:hover { background: var(--red-dim); }
+  #run-btn:disabled { background: var(--rule); color: var(--ink-soft); cursor: not-allowed; }
+
+  /* ── Status log ──────────────────────────────────────────── */
+  #log {
+    font-family: var(--mono);
+    font-size: 11px;
+    line-height: 1.7;
+    color: var(--sand-mid);
+    min-height: 60px;
+    padding: 12px 0 0;
+  }
+  #log .log-ok   { color: #7BC47F; }
+  #log .log-err  { color: #E07070; }
+  #log .log-info { color: var(--sand-mid); }
+  #log .log-dim  { color: var(--ink-soft); }
+
+  /* ── Download strip ──────────────────────────────────────── */
+  #download-strip {
+    display: none;
+    margin-top: 12px;
+    gap: 6px;
+    flex-direction: column;
+  }
+  #download-strip.visible { display: flex; }
+  .dl-btn {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    background: var(--ink);
+    border: 1px solid var(--rule);
+    color: var(--sand);
+    font-family: var(--mono);
+    font-size: 11px;
+    letter-spacing: 0.05em;
+    padding: 9px 12px;
+    cursor: pointer;
+    text-decoration: none;
+    transition: border-color 0.15s;
+  }
+  .dl-btn:hover { border-color: var(--red); }
+  .dl-btn.active { border-color: var(--red); background: var(--red-dim); color: var(--sand); }
+  .dl-btn svg { width: 14px; height: 14px; fill: var(--red); flex-shrink: 0; }
+  .dl-btn .dl-meta { font-size: 10px; color: var(--ink-soft); margin-left: auto; }
+
+  /* Leaflet.Draw dark theme */
+  .leaflet-draw-tooltip {
+    background: var(--ink-mid) !important;
+    border: 1px solid var(--rule) !important;
+    color: var(--sand) !important;
+    font-family: var(--mono) !important;
+    font-size: 10px !important;
+  }
+  .leaflet-draw-tooltip:before { border-right-color: var(--rule) !important; }
+  .ssm-tooltip {
+    background: var(--ink-mid) !important;
+    border: 1px solid var(--rule) !important;
+    color: var(--sand) !important;
+    font-family: var(--mono) !important;
+    font-size: 10px !important;
+    padding: 2px 6px !important;
+  }
+
+  /* ── Map ─────────────────────────────────────────────────── */
+  #map {
+    width: 100%;
+    height: 100%;
+    background: #111;
+  }
+
+  /* Leaflet overrides */
+  .leaflet-container { background: #111 !important; }
+  .leaflet-control-zoom a {
+    background: var(--ink-mid) !important;
+    color: var(--sand) !important;
+    border-color: var(--rule) !important;
+  }
+  .leaflet-control-attribution {
+    background: rgba(26,26,26,0.8) !important;
+    color: var(--ink-soft) !important;
+    font-size: 9px !important;
+  }
+  .leaflet-control-attribution a { color: var(--ink-soft) !important; }
+
+  /* ── Overlay counter ─────────────────────────────────────── */
+  #map-counter {
+    position: absolute;
+    bottom: 28px; right: 12px;
+    z-index: 1000;
+    background: var(--ink-mid);
+    border: 1px solid var(--rule);
+    font-family: var(--mono);
+    font-size: 11px;
+    color: var(--sand-mid);
+    padding: 5px 10px;
+    pointer-events: none;
+    display: none;
+  }
+  #map-counter span { color: var(--sand); font-weight: 500; }
+
+  #basemap-toggle {
+    position: absolute;
+    top: 12px; right: 48px;
+    z-index: 1000;
+  }
+  #basemap-btn {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    background: var(--ink-mid);
+    border: 1px solid var(--rule);
+    color: var(--sand);
+    font-family: var(--mono);
+    font-size: 11px;
+    letter-spacing: 0.06em;
+    text-transform: uppercase;
+    padding: 6px 10px;
+    cursor: pointer;
+    transition: background 0.15s, border-color 0.15s;
+  }
+  #basemap-btn:hover { border-color: var(--red); }
+  #basemap-btn.aerial { background: var(--red); border-color: var(--red-dim); }
+  #basemap-btn svg { width: 14px; height: 14px; fill: var(--sand); flex-shrink: 0; }
+
+  #map-tools {
+    position: absolute;
+    top: 50px; right: 12px;
+    z-index: 1000;
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+  }
+  .map-tool-btn {
+    width: 32px; height: 32px;
+    background: var(--ink-mid);
+    border: 1px solid var(--rule);
+    color: var(--sand);
+    cursor: pointer;
+    display: grid;
+    place-items: center;
+    transition: background 0.15s, border-color 0.15s;
+  }
+  .map-tool-btn:hover { border-color: var(--red); }
+  .map-tool-btn.active { background: var(--red); border-color: var(--red-dim); }
+  .map-tool-btn svg { width: 16px; height: 16px; fill: var(--sand); }
+
+  #coord-readout {
+    position: absolute;
+    bottom: 28px; left: 12px;
+    z-index: 1000;
+    background: var(--ink-mid);
+    border: 1px solid var(--rule);
+    font-family: var(--mono);
+    font-size: 11px;
+    color: var(--sand);
+    padding: 6px 12px;
+    pointer-events: none;
+    max-width: 340px;
+    line-height: 1.6;
+  }
+
+  /* ── Mobile layout (≤768px) ──────────────────────────────── */
+  @media (max-width: 768px) {
+    body { grid-template-rows: auto 1fr; overflow: hidden; }
+
+    header { padding: 10px 14px; }
+    .header-badge { display: none; }
+    .logo-text strong { font-size: 12px; }
+
+    main {
+      grid-template-columns: 1fr;
+      grid-template-rows: 1fr;
+      position: relative;
+    }
+
+    /* Map fills the whole screen */
+    main > div:last-child {
+      position: absolute;
+      inset: 0;
+    }
+    #map { width: 100%; height: 100%; }
+
+    /* Panel slides up from bottom as a sheet */
+    #panel {
+      position: absolute;
+      bottom: 0; left: 0; right: 0;
+      z-index: 2000;
+      border-right: none;
+      border-top: 2px solid var(--red);
+      border-radius: 0;
+      max-height: 75dvh;
+      overflow-y: auto;
+      transform: translateY(calc(100% - 52px)); /* collapsed: only handle visible */
+      transition: transform 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+    }
+    #panel.open { transform: translateY(0); }
+
+    /* Drag handle at top of panel */
+    #panel-handle {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      padding: 14px 20px;
+      cursor: pointer;
+      background: var(--ink-mid);
+      border-bottom: 1px solid var(--rule);
+      flex-shrink: 0;
+      user-select: none;
+    }
+    .handle-pill {
+      width: 36px; height: 4px;
+      background: var(--rule);
+      border-radius: 2px;
+      position: absolute;
+      left: 50%; transform: translateX(-50%);
+      top: 6px;
+    }
+    .handle-label {
+      font-family: var(--mono);
+      font-size: 11px;
+      letter-spacing: 0.08em;
+      text-transform: uppercase;
+      color: var(--sand);
+    }
+    #run-btn-mobile {
+      display: flex;
+      align-items: center;
+      gap: 6px;
+      background: var(--red);
+      border: none;
+      color: var(--sand);
+      font-family: var(--mono);
+      font-size: 11px;
+      font-weight: 600;
+      letter-spacing: 0.08em;
+      text-transform: uppercase;
+      padding: 7px 14px;
+      cursor: pointer;
+    }
+
+    /* Hide desktop-only elements */
+    #panel-handle { display: flex; }
+
+    /* Tighten panel sections on mobile */
+    .panel-section { padding: 12px 16px; }
+    .section-label { font-size: 9px; margin-bottom: 10px; }
+
+    /* Map tools move to bottom-right above counter */
+    #map-tools { top: auto; bottom: 60px; right: 10px; }
+    #basemap-toggle { right: 52px; top: 10px; }
+    #map-counter { bottom: 10px; right: 10px; left: auto; }
+    #coord-readout { bottom: 10px; left: 10px; max-width: calc(100vw - 24px); font-size: 10px; }
+  }
+
+  /* Desktop: hide the mobile handle */
+  @media (min-width: 769px) {
+    #panel-handle { display: none; }
+    #run-btn-mobile { display: none; }
+  }
+</style>
+</head>
+<body>
+
+<header>
+  <div class="logo-mark">
+    <svg viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
+      <path d="M3 3h18v18H3V3zm2 2v14h14V5H5zm2 2h10v2H7V7zm0 4h10v2H7v-2zm0 4h6v2H7v-2z"/>
+    </svg>
+  </div>
+  <div class="logo-text">
+    <strong>Cadastral Extract</strong>
+    <span>Landgate SLIP · Western Australia</span>
+  </div>
+  <div class="header-badge">LGATE-001 / LGATE-217</div>
+</header>
+
+<main>
+  <div id="panel">
+    <!-- Mobile handle — hidden on desktop via CSS -->
+    <div id="panel-handle" onclick="togglePanel()">
+      <div class="handle-pill"></div>
+      <span class="handle-label">⚙ Settings &amp; Extract</span>
+      <button id="run-btn-mobile" onclick="event.stopPropagation(); document.getElementById('run-btn').click();">
+        ▶ Extract
+      </button>
+    </div>
+
+    <!-- Location -->
+    <div class="panel-section">
+      <div class="section-label">01 · Location</div>
+      <div class="tab-bar" style="grid-template-columns: 1fr 1fr 1fr;">
+        <button class="tab-btn active" data-tab="addr">Address</button>
+        <button class="tab-btn" data-tab="bbox">Bounding Box</button>
+        <button class="tab-btn" data-tab="draw">Draw on Map</button>
+      </div>
+
+      <div id="tab-addr" class="tab-panel active">
+        <label for="address">Street address or place name</label>
+        <input type="text" id="address" placeholder="e.g. 123 St Georges Tce, Perth WA" />
+        <label for="radius">Search radius (metres)</label>
+        <input type="number" id="radius" value="500" min="50" max="10000" step="50" />
+      </div>
+
+      <div id="tab-bbox" class="tab-panel">
+        <div class="input-row">
+          <div>
+            <label for="xmin">X Min (lon)</label>
+            <input type="number" id="xmin" placeholder="115.85" step="0.0001" />
+          </div>
+          <div>
+            <label for="ymin">Y Min (lat)</label>
+            <input type="number" id="ymin" placeholder="-31.97" step="0.0001" />
+          </div>
+        </div>
+        <div class="input-row" style="margin-top:8px">
+          <div>
+            <label for="xmax">X Max (lon)</label>
+            <input type="number" id="xmax" placeholder="115.87" step="0.0001" />
+          </div>
+          <div>
+            <label for="ymax">Y Max (lat)</label>
+            <input type="number" id="ymax" placeholder="-31.95" step="0.0001" />
+          </div>
+        </div>
+      </div>
+
+      <div id="tab-draw" class="tab-panel">
+        <div class="input-row">
+          <button type="button" id="draw-rect-btn" class="dl-btn" style="justify-content:center; cursor:pointer;">
+            <svg viewBox="0 0 24 24"><path d="M3 3v18h18V3H3zm16 16H5V5h14v14z"/></svg>
+            Rectangle
+          </button>
+          <button type="button" id="draw-poly-btn" class="dl-btn" style="justify-content:center; cursor:pointer;">
+            <svg viewBox="0 0 24 24"><path d="M12 2 2 8.5 5 21h14l3-12.5L12 2zm0 2.4 7.5 4.9-2.3 9.7H6.8L4.5 9.3 12 4.4z"/></svg>
+            Polygon
+          </button>
+        </div>
+        <div id="draw-status" style="font-family:var(--mono); font-size:11px; color:var(--ink-soft); margin-top:10px; line-height:1.6;">
+          Click a button, then draw on the map.<br>Rectangle: drag corner to corner.<br>Polygon: click each vertex, double-click to finish.
+        </div>
+        <button type="button" id="draw-clear-btn" class="dl-btn" style="justify-content:center; cursor:pointer; margin-top:10px; display:none;">
+          Clear shape
+        </button>
+      </div>
+    </div>
+
+    <!-- CRS & Format -->
+    <div class="panel-section">
+      <div class="section-label">02 · Coordinate System</div>
+      <select id="crs">
+        <optgroup label="Perth Coastal Grid">
+          <option value="EPSG:8031">PCG2020 — EPSG:8031 (recommended)</option>
+          <option value="EPSG:10464">PCG94 — EPSG:10464 (legacy)</option>
+        </optgroup>
+        <optgroup label="Map Grid of Australia">
+          <option value="EPSG:7850">MGA2020 Zone 50 — EPSG:7850 (recommended)</option>
+          <option value="EPSG:7851">MGA2020 Zone 51 — EPSG:7851</option>
+          <option value="EPSG:7849">MGA2020 Zone 49 — EPSG:7849</option>
+          <option value="EPSG:28350">MGA94 Zone 50 — EPSG:28350 (legacy)</option>
+          <option value="EPSG:28351">MGA94 Zone 51 — EPSG:28351 (legacy)</option>
+          <option value="EPSG:28349">MGA94 Zone 49 — EPSG:28349 (legacy)</option>
+        </optgroup>
+        <optgroup label="Geographic">
+          <option value="EPSG:7844">GDA2020 — EPSG:7844</option>
+          <option value="EPSG:4283">GDA94 — EPSG:4283</option>
+          <option value="EPSG:4326">WGS84 — EPSG:4326</option>
+        </optgroup>
+      </select>
+
+      <label style="margin-top:14px">Output format</label>
+      <div class="radio-group" style="grid-template-columns: 1fr 1fr 1fr;">
+        <input type="radio" name="fmt" id="fmt-geojson" value="geojson">
+        <label for="fmt-geojson">GeoJSON</label>
+        <input type="radio" name="fmt" id="fmt-csv" value="csv">
+        <label for="fmt-csv">CSV</label>
+        <input type="radio" name="fmt" id="fmt-dxf" value="dxf" checked>
+        <label for="fmt-dxf">DXF (12d)</label>
+        <input type="radio" name="fmt" id="fmt-kml" value="kml">
+        <label for="fmt-kml">KML</label>
+        <input type="radio" name="fmt" id="fmt-shp" value="shp">
+        <label for="fmt-shp">Shapefile</label>
+        <input type="radio" name="fmt" id="fmt-gpkg" value="gpkg">
+        <label for="fmt-gpkg">GeoPackage</label>
+      </div>
+      <div id="dxf-options" style="display:block; margin-top:10px;">
+        <label for="dxf-layer-field">Layer-by attribute</label>
+        <select id="dxf-layer-field">
+          <option value="">Single layer (LANDGATE_CADASTRE)</option>
+        </select>
+        <label style="display:flex; align-items:center; gap:6px; margin-top:10px; cursor:pointer; text-transform:none; font-size:11px;">
+          <input type="checkbox" id="dxf-text" checked style="width:auto; accent-color:var(--red);">
+          Add lot/plan TEXT labels at parcel centroid
+        </label>
+      </div>
+    </div>
+
+    <!-- Auth -->
+    <div class="panel-section">
+      <div class="section-label">03 · SLIP Token (optional)</div>
+      <label for="token">Subscription token — full attributes</label>
+      <input type="text" id="token" placeholder="Paste SLIP token for lot/plan/tenure data" />
+    </div>
+
+    <!-- NTv2 grid (only relevant for GDA94-referenced outputs) -->
+    <div class="panel-section">
+      <div class="section-label">04 · GDA94 Datum Grid (optional)</div>
+      <div style="font-family:var(--mono); font-size:10px; color:var(--ink-soft); line-height:1.6; margin-bottom:8px;">
+        SLIP data is GDA2020 native — PCG2020/MGA2020/GDA2020 need no shift.
+        Only required for legacy GDA94 outputs (PCG94, MGA94, WGS84).
+        Upload the NTv2 conformal+distortion grid (.gsb) for sub-50mm accuracy;
+        otherwise a 7-parameter approximation (~1.8m ± 0.5m) is used.
+      </div>
+      <input type="file" id="gsb-file" accept=".gsb" style="display:none">
+      <button type="button" id="gsb-upload-btn" class="dl-btn" style="justify-content:center; cursor:pointer; width:100%;">
+        <svg viewBox="0 0 24 24"><path d="M19 9h-4V3H9v6H5l7 7 7-7zm-7 11H5v2h14v-2h-7z" transform="rotate(180 12 12)"/></svg>
+        Upload .gsb grid
+      </button>
+      <div id="gsb-status" style="font-family:var(--mono); font-size:10px; color:var(--ink-soft); margin-top:6px;"></div>
+    </div>
+
+    <!-- Map display -->
+    <div class="panel-section">
+      <div class="section-label">05 · Map Display</div>
+      <div class="input-row">
+        <div>
+          <label for="line-color">Line colour</label>
+          <input type="color" id="line-color" value="#32CD32" style="height:34px; padding:2px; cursor:pointer;">
+        </div>
+        <div>
+          <label for="fill-color">Fill colour</label>
+          <input type="color" id="fill-color" value="#C0392B" style="height:34px; padding:2px; cursor:pointer;">
+        </div>
+      </div>
+      <label for="line-weight">Line weight (<span id="line-weight-val">0.8</span> px)</label>
+      <input type="range" id="line-weight" min="0.2" max="4" step="0.2" value="0.8" style="width:100%; accent-color:var(--red);">
+
+      <label style="display:flex; align-items:center; gap:8px; cursor:pointer; text-transform:none; font-size:12px; font-weight:500; color:var(--sand); margin-top:12px;">
+        <input type="checkbox" id="lot-labels" style="width:auto; accent-color:var(--red);"> Show lot/plan labels on map
+      </label>
+
+      <div style="margin-top:14px; border-top:1px solid var(--rule); padding-top:12px;">
+        <div class="section-label" style="margin-bottom:10px;">06 · Survey Marks (SSM / BM)</div>
+        <label style="display:flex; align-items:center; gap:8px; cursor:pointer; text-transform:none; font-size:12px; font-weight:500; color:var(--sand);">
+          <input type="checkbox" id="ssm-enable" style="width:auto; accent-color:var(--red);"> Include SSM &amp; Bench Marks (LGATE-076)
+        </label>
+        <label style="display:flex; align-items:center; gap:8px; cursor:pointer; text-transform:none; font-size:12px; font-weight:500; color:var(--sand); margin-top:8px;">
+          <input type="checkbox" id="rm-enable" style="width:auto; accent-color:var(--red);"> Include Reference Marks (LGATE-199)
+        </label>
+        <div class="input-row" style="margin-top:10px;">
+          <div>
+            <label for="ssm-color">SSM colour</label>
+            <input type="color" id="ssm-color" value="#00C853" style="height:34px; padding:2px; cursor:pointer;">
+          </div>
+          <div>
+            <label for="rm-color">RM colour</label>
+            <input type="color" id="rm-color" value="#00BFFF" style="height:34px; padding:2px; cursor:pointer;">
+          </div>
+        </div>
+        <div id="ssm-gda94-note" style="display:none; margin-top:10px; font-family:var(--mono); font-size:10px; line-height:1.6; padding:8px 10px; background:rgba(180,83,9,0.15); border:1px solid rgba(180,83,9,0.4); color:#FCD34D;">
+          ⚠ GDA94-referenced output selected. SSM coordinates will be read from Landgate's published GDA94 attribute fields where available — however not all marks have these fields populated. Marks missing GDA94 attributes will fall back to a 7-parameter datum transformation (±50–140mm accuracy). For best results use PCG2020 or MGA2020, which use SLIP's native GDA2020 coordinates with no datum shift.
+        </div>
+      </div>
+    </div>
+
+    <!-- Run -->
+    <div class="panel-section">
+      <button id="run-btn">Extract cadastral data</button>
+      <div id="log"></div>
+      <div id="download-strip"></div>
+    </div>
+
+  </div><!-- /panel -->
+
+  <div style="position:relative; overflow:hidden;">
+    <div id="map"></div>
+    <div id="map-counter">Features: <span id="feat-count">0</span></div>
+    <div id="basemap-toggle" title="Click to cycle: Dark map → Landgate aerial → Esri satellite → Dark map">
+      <button id="basemap-btn" onclick="toggleBasemap()">
+        <svg viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg"><path d="M20.5 3l-.16.03L15 5.1 9 3 3.36 4.9c-.21.07-.36.25-.36.48V20.5c0 .28.22.5.5.5l.16-.03L9 18.9l6 2.1 5.64-1.9c.21-.07.36-.25.36-.48V3.5c0-.28-.22-.5-.5-.5zM15 19l-6-2.11V5l6 2.11V19z"/></svg>
+        Aerial
+      </button>
+    </div>
+    <!-- Map tools -->
+    <div id="map-tools">
+      <button id="tool-measure" class="map-tool-btn" title="Measure distance / area" onclick="toggleMeasure()">
+        <svg viewBox="0 0 24 24"><path d="M21 6.5l-4-4-1.5 1.5 1 1L15 6.5l-1-1-1.5 1.5 1 1-1.5 1.5-1-1L9.5 10l1 1-1.5 1.5-1-1L6.5 13l1 1L3 17.5 6.5 21l13-13-1-1 1.5-1.5-1-1zM6.5 19l-1.5-1.5 11-11 1.5 1.5z"/></svg>
+      </button>
+      <button id="tool-coord" class="map-tool-btn" title="Click map to get coordinates" onclick="toggleCoordPicker()">
+        <svg viewBox="0 0 24 24"><path d="M12 2C8.13 2 5 5.13 5 9c0 5.25 7 13 7 13s7-7.75 7-13c0-3.87-3.13-7-7-7zm0 9.5c-1.38 0-2.5-1.12-2.5-2.5S10.62 6.5 12 6.5 14.5 7.62 14.5 9 13.38 11.5 12 11.5z"/></svg>
+      </button>
+    </div>
+    <!-- Coord readout -->
+    <div id="coord-readout" style="display:none;"></div>
+  </div>
+</main>
+
+<script>
+// ── Coordinate system definitions (proj4) ──────────────────────────────────
+// SLIP is requested with outSR=7844, so coordinates returned are GDA2020
+// geographic (EPSG:7844) — SLIP's native storage datum. This avoids SLIP's
+// own on-the-fly GDA2020->WGS84/GDA94 transform (which would apply a ~1.8m
+// shift we'd then have to undo).
+//
+// GDA2020 targets (PCG2020, MGA2020, GDA2020 itself) need NO datum shift —
+// just projection. GDA94-referenced targets (PCG94, MGA94 zones, GDA94,
+// WGS84) need a GDA2020 -> GDA94 shift (~1.8m + distortion), via the NTv2
+// conformal+distortion grid if loaded, else a 7-parameter fallback.
+proj4.defs([
+  ['EPSG:4326', '+proj=longlat +datum=WGS84 +no_defs'],
+  ['EPSG:4283', '+proj=longlat +ellps=GRS80 +no_defs'],   // GDA94 geographic
+  ['EPSG:7844', '+proj=longlat +ellps=GRS80 +no_defs'],   // GDA2020 geographic (SLIP source)
+  // MGA94 zones (GDA94 datum)
+  ['EPSG:28349', '+proj=utm +zone=49 +south +ellps=GRS80 +units=m +no_defs'],
+  ['EPSG:28350', '+proj=utm +zone=50 +south +ellps=GRS80 +units=m +no_defs'],
+  ['EPSG:28351', '+proj=utm +zone=51 +south +ellps=GRS80 +units=m +no_defs'],
+  // MGA2020 zones (GDA2020 datum) — same projection params as MGA94, different datum
+  ['EPSG:7849', '+proj=utm +zone=49 +south +ellps=GRS80 +units=m +no_defs'],
+  ['EPSG:7850', '+proj=utm +zone=50 +south +ellps=GRS80 +units=m +no_defs'],
+  ['EPSG:7851', '+proj=utm +zone=51 +south +ellps=GRS80 +units=m +no_defs'],
+  // Perth Coastal Grid (Landgate) — Transverse Mercator, central meridian 115.8166667E,
+  // scale factor 0.99999906, false easting 50,000 m.
+  // PCG2020 on GDA2020 (EPSG:8031) — false northing 3,900,000 m
+  ['EPSG:8031', '+proj=tmerc +lat_0=0 +lon_0=115.816666666667 +k=0.99999906 +x_0=50000 +y_0=3900000 +ellps=GRS80 +units=m +no_defs'],
+  // PCG94 on GDA94 (EPSG:10464) — false northing 3,800,000 m
+  ['EPSG:10464', '+proj=tmerc +lat_0=0 +lon_0=115.816666666667 +k=0.99999906 +x_0=50000 +y_0=3800000 +ellps=GRS80 +units=m +no_defs'],
+]);
+
+// CRS targets referenced to the GDA94 datum — these need the GDA2020 -> GDA94
+// shift applied to SLIP's native GDA2020 output.
+const GDA94_TARGETS = new Set(['EPSG:4283', 'EPSG:4326', 'EPSG:28349', 'EPSG:28350', 'EPSG:28351', 'EPSG:10464']);
+
+// ── ICSM official 7-parameter conformal transformation: GDA94 -> GDA2020 ──
+// Source: Geocentric Datum of Australia 2020 Technical Manual (ICSM)
+//   Translations (m):           tx=0.06155   ty=-0.01087  tz=-0.04019
+//   Rotations (arc-seconds):     rx=-0.0394924 ry=-0.0327221 rz=-0.0328979
+//   Scale change (ppm):          sc=-0.009994
+// Applied as a small-angle Bursa-Wolf (Helmert) transform on geocentric XYZ.
+// Used only as a fallback when no NTv2 grid is loaded.
+const GDA94_TO_GDA2020 = {
+  tx: 0.06155, ty: -0.01087, tz: -0.04019,
+  rx: -0.0394924, ry: -0.0327221, rz: -0.0328979, // arc-seconds
+  sc: -0.009994, // ppm
+};
+
+const GRS80_A = 6378137.0;
+const GRS80_F = 1 / 298.257222101;
+
+function geographicToGeocentric(lon, lat, h, a, f) {
+  const e2 = 2 * f - f * f;
+  const lonR = lon * Math.PI / 180, latR = lat * Math.PI / 180;
+  const sinLat = Math.sin(latR), cosLat = Math.cos(latR);
+  const N = a / Math.sqrt(1 - e2 * sinLat * sinLat);
+  const x = (N + h) * cosLat * Math.cos(lonR);
+  const y = (N + h) * cosLat * Math.sin(lonR);
+  const z = (N * (1 - e2) + h) * sinLat;
+  return [x, y, z];
+}
+
+function geocentricToGeographic(x, y, z, a, f) {
+  const e2 = 2 * f - f * f;
+  const lon = Math.atan2(y, x);
+  const p = Math.sqrt(x * x + y * y);
+  let lat = Math.atan2(z, p * (1 - e2));
+  for (let i = 0; i < 5; i++) {
+    const sinLat = Math.sin(lat);
+    const N = a / Math.sqrt(1 - e2 * sinLat * sinLat);
+    lat = Math.atan2(z + e2 * N * sinLat, p);
+  }
+  return [lon * 180 / Math.PI, lat * 180 / Math.PI];
+}
+
+function applyHelmert([lon, lat], params, forward = true) {
+  // The published ICSM parameters (tx,ty,tz,rx,ry,rz,sc), applied with a
+  // NEGATIVE sign, give GDA94 -> GDA2020 (~1.8m NNE shift in WA).
+  // Applied with a POSITIVE sign, they give the inverse, GDA2020 -> GDA94.
+  const sign = forward ? -1 : 1;
+  const [x, y, z] = geographicToGeocentric(lon, lat, 0, GRS80_A, GRS80_F);
+
+  const asToRad = s => s * Math.PI / (180 * 3600);
+  const rx = asToRad(params.rx) * sign;
+  const ry = asToRad(params.ry) * sign;
+  const rz = asToRad(params.rz) * sign;
+  const dS = (params.sc * 1e-6) * sign;
+  const tx = params.tx * sign, ty = params.ty * sign, tz = params.tz * sign;
+
+  const x2 = tx + (1 + dS) * (x - rz * y + ry * z);
+  const y2 = ty + (1 + dS) * (rz * x + y - rx * z);
+  const z2 = tz + (1 + dS) * (-ry * x + rx * y + z);
+
+  return geocentricToGeographic(x2, y2, z2, GRS80_A, GRS80_F);
+}
+
+// GDA2020 -> GDA94 (the direction needed since SLIP source is now GDA2020)
+function gda2020ToGda94([lon, lat]) {
+  if (ntv2Grid) {
+    // NTv2 grid is defined for GDA94 -> GDA2020 (forward). For the inverse
+    // (GDA2020 -> GDA94), look up the shift at the GDA2020 location and
+    // subtract it (iterating once is sufficient at this accuracy level).
+    const shift = ntv2Lookup(ntv2Grid, lon, lat);
+    if (shift) {
+      // Forward shift (GDA94->GDA2020): lon -= dLon/3600 (west-positive convention),
+      // lat += dLat/3600. Apply the inverse:
+      return [lon + shift.dLon / 3600, lat - shift.dLat / 3600];
+    }
+  }
+  return applyHelmert([lon, lat], GDA94_TO_GDA2020, false);
+}
+
+// ── NTv2 (.gsb) grid support ──────────────────────────────────────────────
+// Implements the binary NTv2 format: 16-byte header records, an overview
+// record (11 fields), one or more sub-grids (11-field header + GS_COUNT
+// grid-shift records of 4 floats each: lat shift, lon shift, lat accuracy,
+// lon accuracy — all in arc-seconds, GS_TYPE=SECONDS).
+// Reference: Esri ntv2-file-routines README / NTv2 Developer's Guide.
+// Grid defines the GDA94 -> GDA2020 shift; we apply it inverted for GDA2020 -> GDA94.
+
+let ntv2Grid = null;       // parsed grid object, or null if not loaded
+let ntv2LoadStatus = 'none'; // 'none' | 'loading' | 'loaded' | 'failed'
+
+function parseNTv2(buffer) {
+  const dv = new DataView(buffer);
+  let off = 0;
+
+  // Detect endianness from NUM_OREC's value field (should be 11)
+  const littleEndian = dv.getInt32(8, true) === 11 ? true : dv.getInt32(8, false) === 11 ? false : true;
+
+  function readInt(o) { return dv.getInt32(o, littleEndian); }
+  function readDouble(o) { return dv.getFloat64(o, littleEndian); }
+  function readStr(o, len) {
+    return new TextDecoder('ascii').decode(new Uint8Array(buffer, o, len)).trim();
+  }
+
+  // Overview record: 11 x 16-byte fields = 176 bytes
+  // Field order: NUM_OREC(0) NUM_SREC(1) NUM_FILE(2) GS_TYPE(3) VERSION(4)
+  //              SYSTEM_F(5) SYSTEM_T(6) MAJOR_F(7) MINOR_F(8) MAJOR_T(9) MINOR_T(10)
+  // Each field is [8-byte name][8-byte value] -> value offset = index*16 + 8
+  off = 0;
+  const numOrec = readInt(0 * 16 + 8);
+  const numSrec = readInt(1 * 16 + 8);
+  const numFile = readInt(2 * 16 + 8);
+  const gsType = readStr(3 * 16 + 8, 8);
+  off = 11 * 16;
+
+  // Sanity checks
+  if (numOrec !== 11 || numSrec !== 11) {
+    throw new Error(`Unexpected NTv2 header (NUM_OREC=${numOrec}, NUM_SREC=${numSrec}, NUM_FILE=${numFile}) — file may not be a valid .gsb`);
+  }
+  if (numFile < 1 || numFile > 1000) {
+    throw new Error(`Implausible NUM_FILE=${numFile} — header parsing likely misaligned`);
+  }
+
+  const subgrids = [];
+  for (let f = 0; f < numFile; f++) {
+    const subName = readStr(off + 8, 8); off += 16; // SUB_NAME
+    const parent  = readStr(off + 8, 8); off += 16; // PARENT
+    off += 16; // CREATED
+    off += 16; // UPDATED
+    const sLat = readDouble(off + 8); off += 16; // S_LAT (seconds)
+    const nLat = readDouble(off + 8); off += 16; // N_LAT
+    const eLon = readDouble(off + 8); off += 16; // E_LONG (positive-west convention)
+    const wLon = readDouble(off + 8); off += 16; // W_LONG
+    const latInc = readDouble(off + 8); off += 16; // LAT_INC
+    const lonInc = readDouble(off + 8); off += 16; // LONG_INC
+    const gsCount = readInt(off + 8); off += 16; // GS_COUNT
+
+    if (gsCount < 0 || gsCount > 200_000_000) {
+      throw new Error(`Implausible GS_COUNT=${gsCount} for sub-grid '${subName}' — header parsing likely misaligned`);
+    }
+
+    const nRows = Math.round((nLat - sLat) / latInc) + 1;
+    const nCols = Math.round((wLon - eLon) / lonInc) + 1;
+
+    // Grid-shift records: gsCount x 4 floats (16 bytes each)
+    const dLat = new Float32Array(gsCount);
+    const dLon = new Float32Array(gsCount);
+    for (let i = 0; i < gsCount; i++) {
+      dLat[i] = dv.getFloat32(off, littleEndian);
+      dLon[i] = dv.getFloat32(off + 4, littleEndian);
+      off += 16; // skip 2 accuracy floats
+    }
+
+    subgrids.push({
+      name: subName, parent, sLat, nLat, eLon, wLon, latInc, lonInc,
+      nRows, nCols, gsCount, dLat, dLon
+    });
+  }
+
+  return { gsType, subgrids };
+}
+
+// Find the most specific (smallest) sub-grid containing the point,
+// then bilinearly interpolate the lat/lon shift (in arc-seconds).
+function ntv2Lookup(grid, lon, lat) {
+  // NTv2 longitude convention: stored as positive-WEST. Our lon is east-positive.
+  const lonW = -lon * 3600; // to arc-seconds, positive-west
+  const latS = lat * 3600;  // to arc-seconds
+
+  let best = null;
+  for (const sg of grid.subgrids) {
+    if (latS >= sg.sLat && latS <= sg.nLat && lonW >= sg.eLon && lonW <= sg.wLon) {
+      if (!best || (sg.nRows * sg.nCols) < (best.nRows * best.nCols)) best = sg;
+    }
+  }
+  if (!best) return null;
+
+  const rowF = (latS - best.sLat) / best.latInc;
+  const colF = (lonW - best.eLon) / best.lonInc;
+  const row0 = Math.floor(rowF), col0 = Math.floor(colF);
+  const row1 = Math.min(row0 + 1, best.nRows - 1);
+  const col1 = Math.min(col0 + 1, best.nCols - 1);
+  const fr = rowF - row0, fc = colF - col0;
+
+  const idx = (r, c) => r * best.nCols + c;
+  const i00 = idx(row0, col0), i10 = idx(row0, col1), i01 = idx(row1, col0), i11 = idx(row1, col1);
+
+  function bilerp(arr) {
+    const v00 = arr[i00], v10 = arr[i10], v01 = arr[i01], v11 = arr[i11];
+    const top = v00 * (1 - fc) + v10 * fc;
+    const bot = v01 * (1 - fc) + v11 * fc;
+    return top * (1 - fr) + bot * fr;
+  }
+
+  return { dLat: bilerp(best.dLat), dLon: bilerp(best.dLon) };
+}
+
+async function loadNTv2Grid(file) {
+  ntv2LoadStatus = 'loading';
+  try {
+    const buffer = await file.arrayBuffer();
+    ntv2Grid = parseNTv2(buffer);
+    ntv2LoadStatus = 'loaded';
+    return { ok: true, subgrids: ntv2Grid.subgrids.length, bytes: buffer.byteLength };
+  } catch (err) {
+    ntv2LoadStatus = 'failed';
+    ntv2Grid = null;
+    return { ok: false, error: err.message };
+  }
+}
+
+function reprojectCoord(coord, toCrs) {
+  let c = coord;
+  // Step 1: datum transform if target is GDA94-referenced
+  if (GDA94_TARGETS.has(toCrs)) {
+    c = gda2020ToGda94(c);
+  }
+  // Step 2: projection (geographic targets need no projection step)
+  if (toCrs === 'EPSG:4326' || toCrs === 'EPSG:4283' || toCrs === 'EPSG:7844') {
+    return c;
+  }
+  return proj4('EPSG:7844', toCrs, c);
+}
+
+function reprojectGeometry(geometry, toCrs) {
+  const reprojRing = ring => ring.map(c => reprojectCoord(c, toCrs));
+  const g = geometry;
+  if (toCrs === 'EPSG:7844') return g; // SLIP source datum — no change
+  if (g.type === 'Polygon') {
+    return { type: 'Polygon', coordinates: g.coordinates.map(reprojRing) };
+  } else if (g.type === 'MultiPolygon') {
+    return { type: 'MultiPolygon', coordinates: g.coordinates.map(poly => poly.map(reprojRing)) };
+  } else if (g.type === 'Point') {
+    return { type: 'Point', coordinates: reprojectCoord(g.coordinates, toCrs) };
+  } else if (g.type === 'LineString') {
+    return { type: 'LineString', coordinates: reprojRing(g.coordinates) };
+  }
+  return g;
+}
+</script>
+
+
+
+<script>
+// ── Map init ──────────────────────────────────────────────────────────────
+const map = L.map('map', { zoomControl: true }).setView([-31.95, 115.86], 13);
+
+// ── Basemap layers ────────────────────────────────────────────────────────
+const darkTile = L.tileLayer('https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png', {
+  attribution: '&copy; OpenStreetMap &copy; CARTO',
+  subdomains: 'abcd', maxZoom: 20
+});
+
+// CARTO Light — clean light basemap, good contrast for cadastral linework
+const lightTile = L.tileLayer('https://{s}.basemaps.cartocdn.com/light_all/{z}/{x}/{y}{r}.png', {
+  attribution: '&copy; OpenStreetMap &copy; CARTO',
+  subdomains: 'abcd', maxZoom: 20
+});
+
+// Landgate public aerial — real aerial photography, free, no token
+const landgateAerial = L.tileLayer.wms(
+  'https://public-services.slip.wa.gov.au/public/services/SLIP_Public_Services/Locate/MapServer/WMSServer', {
+  layers: '0',
+  format: 'image/jpeg',
+  transparent: false,
+  attribution: '&copy; Landgate — Aerial imagery (public, ≥400 days)',
+  maxZoom: 19,
+  version: '1.3.0',
+});
+
+// Esri World Imagery — satellite (fallback / global coverage)
+const esriSatellite = L.tileLayer(
+  'https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}', {
+  attribution: '&copy; Esri, Maxar — Satellite imagery',
+  maxZoom: 20
+});
+
+darkTile.addTo(map);
+let basemapMode = 'dark'; // 'dark' | 'light' | 'aerial' | 'satellite'
+
+// Cycle: dark → light → aerial → satellite → dark
+// btnLabel = label of CURRENT mode (what you're on), next = what clicking goes to
+const BASEMAP_CYCLE = {
+  dark:      { next: 'light',     btnLabel: '🌑 Dark',      active: false },
+  light:     { next: 'aerial',    btnLabel: '☀ Light',     active: false },
+  aerial:    { next: 'satellite', btnLabel: '📷 Aerial',   active: true  },
+  satellite: { next: 'dark',      btnLabel: '🛰 Satellite', active: true  },
+};
+
+function updateBasemapBtn() {
+  const btn = document.getElementById('basemap-btn');
+  const { btnLabel, active } = BASEMAP_CYCLE[basemapMode];
+  btn.className = active ? 'aerial' : '';
+  btn.innerHTML = `<svg viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg"><path d="M20.5 3l-.16.03L15 5.1 9 3 3.36 4.9c-.21.07-.36.25-.36.48V20.5c0 .28.22.5.5.5l.16-.03L9 18.9l6 2.1 5.64-1.9c.21-.07.36-.25.36-.48V3.5c0-.28-.22-.5-.5-.5zM15 19l-6-2.11V5l6 2.11V19z"/></svg> ${btnLabel}`;
+}
+
+function toggleBasemap() {
+  const next = BASEMAP_CYCLE[basemapMode].next;
+
+  // Remove current
+  if (basemapMode === 'dark') map.removeLayer(darkTile);
+  else if (basemapMode === 'light') map.removeLayer(lightTile);
+  else if (basemapMode === 'aerial') map.removeLayer(landgateAerial);
+  else map.removeLayer(esriSatellite);
+
+  // Add next
+  if (next === 'dark') darkTile.addTo(map);
+  else if (next === 'light') lightTile.addTo(map);
+  else if (next === 'aerial') landgateAerial.addTo(map);
+  else esriSatellite.addTo(map);
+
+  basemapMode = next;
+  updateBasemapBtn();
+  if (cadastreLayer) cadastreLayer.setStyle(getCadastreStyle());
+}
+
+// Set initial button label to match starting mode (dark)
+updateBasemapBtn();
+
+function isAerial() { return basemapMode === 'aerial' || basemapMode === 'satellite'; }
+
+let cadastreLayer = null;
+let bboxRect = null;
+let ssmLayer = null;   // LGATE-076 SSM + BM points
+let rmLayer  = null;   // LGATE-199 Reference Marks
+
+const PUBLIC_URL  = 'https://services.slip.wa.gov.au/public/rest/services/SLIP_Public_Services/Property_and_Planning_WFS/MapServer/47/query';
+const SSM_URL     = 'https://services.slip.wa.gov.au/public/rest/services/SLIP_Public_Services/Property_and_Planning_WFS/MapServer/43/query';
+const RM_URL      = 'https://services.slip.wa.gov.au/public/rest/services/SLIP_Public_Services/Property_and_Planning_WFS/MapServer/42/query';
+const LABELS_URL  = 'https://services.slip.wa.gov.au/public/rest/services/SLIP_Public_Services/Property_and_Planning/MapServer/136/query'; // LGATE-283 Plan Labels
+let geocodeMarker = null;
+let drawnLayer = null;       // user-drawn rectangle or polygon (L.Layer)
+let drawnGeomType = null;    // 'rectangle' | 'polygon'
+let drawnPolygonRing = null; // [[lon,lat],...] closed ring, set when polygon drawn
+const drawnFeatureGroup = new L.FeatureGroup().addTo(map);
+
+// ── Tab logic ─────────────────────────────────────────────────────────────
+let activeTab = 'addr';
+document.querySelectorAll('.tab-btn').forEach(btn => {
+  btn.addEventListener('click', () => {
+    activeTab = btn.dataset.tab;
+    document.querySelectorAll('.tab-btn').forEach(b => b.classList.remove('active'));
+    document.querySelectorAll('.tab-panel').forEach(p => p.classList.remove('active'));
+    btn.classList.add('active');
+    document.getElementById('tab-' + activeTab).classList.add('active');
+    // Cancel any in-progress draw if leaving the draw tab
+    if (activeTab !== 'draw' && currentDrawHandler) {
+      currentDrawHandler.disable();
+      currentDrawHandler = null;
+      setDrawBtnActive(null);
+    }
+  });
+});
+
+// ── Draw on map ───────────────────────────────────────────────────────────
+let currentDrawHandler = null;
+
+function setDrawBtnActive(which) {
+  document.getElementById('draw-rect-btn').classList.toggle('active', which === 'rect');
+  document.getElementById('draw-poly-btn').classList.toggle('active', which === 'poly');
+}
+
+function clearDrawnShape() {
+  drawnFeatureGroup.clearLayers();
+  drawnLayer = null;
+  drawnGeomType = null;
+  document.getElementById('draw-clear-btn').style.display = 'none';
+  document.getElementById('draw-status').innerHTML =
+    'Click a button, then draw on the map.<br>Rectangle: drag corner to corner.<br>Polygon: click each vertex, double-click to finish.';
+}
+
+function startDraw(type) {
+  if (currentDrawHandler) currentDrawHandler.disable();
+  clearDrawnShape();
+
+  const shapeOptions = { color: '#C0392B', weight: 2, opacity: 0.9, fillOpacity: 0.06, dashArray: '4 4' };
+
+  if (type === 'rect') {
+    currentDrawHandler = new L.Draw.Rectangle(map, { shapeOptions });
+    setDrawBtnActive('rect');
+    document.getElementById('draw-status').textContent = 'Drag on the map to draw the extraction rectangle…';
+  } else {
+    currentDrawHandler = new L.Draw.Polygon(map, { shapeOptions, allowIntersection: false, showArea: true });
+    setDrawBtnActive('poly');
+    document.getElementById('draw-status').textContent = 'Click each vertex, then click the first point or double-click to close…';
+  }
+  currentDrawHandler.enable();
+}
+
+document.getElementById('draw-rect-btn').addEventListener('click', () => startDraw('rect'));
+document.getElementById('draw-poly-btn').addEventListener('click', () => startDraw('poly'));
+document.getElementById('draw-clear-btn').addEventListener('click', clearDrawnShape);
+
+map.on(L.Draw.Event.CREATED, (e) => {
+  drawnFeatureGroup.clearLayers();
+  drawnLayer = e.layer;
+  drawnGeomType = e.layerType; // 'rectangle' | 'polygon'
+  drawnFeatureGroup.addLayer(drawnLayer);
+  currentDrawHandler = null;
+  setDrawBtnActive(null);
+
+  const latlngs = drawnLayer.getLatLngs()[0];
+  const area = (L.GeometryUtil && L.GeometryUtil.geodesicArea)
+    ? L.GeometryUtil.geodesicArea(latlngs) : null;
+  const areaStr = area ? `${(area / 10000).toFixed(2)} ha` : '';
+  document.getElementById('draw-status').innerHTML =
+    `${drawnGeomType === 'rectangle' ? 'Rectangle' : 'Polygon'} drawn` +
+    (areaStr ? ` — approx. ${areaStr}` : '') +
+    `.<br>This area will be used for extraction.`;
+  document.getElementById('draw-clear-btn').style.display = 'block';
+});
+
+
+
+// ── Format toggle (show DXF options) ──────────────────────────────────────
+document.querySelectorAll('input[name="fmt"]').forEach(r => {
+  r.addEventListener('change', () => {
+    document.getElementById('dxf-options').style.display =
+      document.getElementById('fmt-dxf').checked ? 'block' : 'none';
+  });
+});
+
+// ── NTv2 .gsb upload ────────────────────────────────────────────────────
+const gsbStatus = document.getElementById('gsb-status');
+document.getElementById('gsb-upload-btn').addEventListener('click', () => {
+  document.getElementById('gsb-file').click();
+});
+document.getElementById('gsb-file').addEventListener('change', async (e) => {
+  const file = e.target.files[0];
+  if (!file) return;
+  gsbStatus.textContent = `Loading ${file.name} (${(file.size/1024/1024).toFixed(1)} MB)…`;
+  gsbStatus.style.color = 'var(--ink-soft)';
+  const result = await loadNTv2Grid(file);
+  if (result.ok) {
+    gsbStatus.textContent = `✓ ${file.name} loaded — ${result.subgrids} sub-grid(s), ${(result.bytes/1024/1024).toFixed(1)} MB`;
+    gsbStatus.style.color = '#7BC47F';
+    // Re-render download if results already present
+    if (lastFeatures) showDownloadStrip(lastFeatures, document.getElementById('crs').value, lastSlug, lastSsmFeatures, lastRmFeatures);
+  } else {
+    gsbStatus.textContent = `✗ Failed to load grid: ${result.error}`;
+    gsbStatus.style.color = '#E07070';
+  }
+});
+
+// ── Map display controls (live re-style) ──────────────────────────────────
+const lineWeightInput = document.getElementById('line-weight');
+const lineWeightVal = document.getElementById('line-weight-val');
+lineWeightInput.addEventListener('input', () => {
+  lineWeightVal.textContent = parseFloat(lineWeightInput.value).toFixed(1);
+  if (cadastreLayer) cadastreLayer.setStyle(getCadastreStyle());
+});
+document.getElementById('line-color').addEventListener('input', () => {
+  if (cadastreLayer) cadastreLayer.setStyle(getCadastreStyle());
+  if (lastFeatures) showDownloadStrip(lastFeatures, document.getElementById('crs').value, lastSlug, lastSsmFeatures, lastRmFeatures);
+});
+document.getElementById('fill-color').addEventListener('input', () => {
+  if (cadastreLayer) cadastreLayer.setStyle(getCadastreStyle());
+});
+document.getElementById('ssm-color').addEventListener('input', () => {
+  if (ssmLayer) ssmLayer.setStyle({ color: document.getElementById('ssm-color').value, fillColor: document.getElementById('ssm-color').value });
+  if (lastFeatures) showDownloadStrip(lastFeatures, document.getElementById('crs').value, lastSlug, lastSsmFeatures, lastRmFeatures);
+});
+document.getElementById('rm-color').addEventListener('input', () => {
+  if (rmLayer) rmLayer.setStyle({ color: document.getElementById('rm-color').value, fillColor: document.getElementById('rm-color').value });
+  if (lastFeatures) showDownloadStrip(lastFeatures, document.getElementById('crs').value, lastSlug, lastSsmFeatures, lastRmFeatures);
+});
+
+// ── Logging ───────────────────────────────────────────────────────────────
+const logEl = document.getElementById('log');
+function log(msg, type = 'info') {
+  const line = document.createElement('div');
+  line.className = 'log-' + type;
+  line.textContent = msg;
+  logEl.appendChild(line);
+  logEl.scrollTop = logEl.scrollHeight;
+}
+function clearLog() { logEl.innerHTML = ''; }
+
+// ── Nominatim geocode ─────────────────────────────────────────────────────
+async function geocode(address) {
+  const url = `https://nominatim.openstreetmap.org/search?q=${encodeURIComponent(address)}&format=json&limit=1&countrycodes=au`;
+  const res = await fetch(url, { headers: { 'User-Agent': 'LandgateCadastralTool/1.0' } });
+  if (!res.ok) throw new Error('Geocoding request failed');
+  const data = await res.json();
+  if (!data.length) throw new Error(`Address not found: "${address}"`);
+  return { lon: parseFloat(data[0].lon), lat: parseFloat(data[0].lat), display: data[0].display_name };
+}
+
+// ── Bbox from point + radius ──────────────────────────────────────────────
+function bboxFromRadius(lon, lat, radiusM) {
+  const latDeg = radiusM / 111320;
+  const lonDeg = radiusM / (111320 * Math.cos(lat * Math.PI / 180));
+  return [lon - lonDeg, lat - latDeg, lon + lonDeg, lat + latDeg];
+}
+
+// ── SLIP fetch ────────────────────────────────────────────────────────────
+const SUB_URL    = 'https://token.slip.wa.gov.au/arcgis/rest/services/Landgate_v2_Subscription_Services/Cadastral_FS/FeatureServer/0/query';
+
+async function fetchPage(bbox, offset, token) {
+  const [xmin, ymin, xmax, ymax] = bbox;
+  const base = token ? SUB_URL : PUBLIC_URL;
+  const params = new URLSearchParams({
+    where: '1=1',
+    geometry: `${xmin},${ymin},${xmax},${ymax}`,
+    geometryType: 'esriGeometryEnvelope',
+    inSR: '4326',
+    spatialRel: 'esriSpatialRelIntersects',
+    outFields: '*',
+    outSR: '7844',  // GDA2020 geographic — SLIP's native datum, avoids on-the-fly
+                    // GDA2020->WGS84/GDA94 transform (which 'outSR=4326' would apply)
+    f: 'geojson',
+    resultOffset: offset,
+    resultRecordCount: 1000,
+    returnGeometry: 'true',
+  });
+  if (token) params.set('token', token);
+  const res = await fetch(`${base}?${params}`);
+  if (!res.ok) throw new Error(`SLIP API error ${res.status}: ${res.statusText}`);
+  return res.json();
+}
+
+async function fetchAll(bbox, token) {
+  const features = [];
+  let offset = 0;
+  while (true) {
+    log(`  Fetching ${offset + 1}–${offset + 1000}…`, 'dim');
+    const data = await fetchPage(bbox, offset, token);
+    const page = data.features || [];
+    features.push(...page);
+    updateCounter(features.length);
+    if (!data.exceededTransferLimit || page.length === 0 || features.length >= 5000) break;
+    offset += 1000;
+  }
+  return features;
+}
+
+// ── CRS note (for download metadata) ─────────────────────────────────────
+// Note: reprojection from WGS84 is non-trivial in-browser without proj4.
+// We include the chosen CRS as metadata in the GeoJSON properties and
+// display a note. For projected outputs (PCG, MGA) we note that
+// reprojection should be done in QGIS / FME after download.
+
+// ── Draw on map ───────────────────────────────────────────────────────────
+async function fetchPoints(url, bbox, token) {
+  // Single-page fetch for point layers (SSM/RM counts are low in typical areas)
+  const [xmin, ymin, xmax, ymax] = bbox;
+  const params = new URLSearchParams({
+    where: '1=1',
+    geometry: `${xmin},${ymin},${xmax},${ymax}`,
+    geometryType: 'esriGeometryEnvelope',
+    inSR: '4326',
+    spatialRel: 'esriSpatialRelIntersects',
+    outFields: '*',
+    outSR: '7844',
+    f: 'geojson',
+    resultRecordCount: 2000,
+    returnGeometry: 'true',
+  });
+  if (token) params.set('token', token);
+  const res = await fetch(`${url}?${params}`);
+  if (!res.ok) throw new Error(`SLIP error ${res.status}`);
+  const data = await res.json();
+  if (data.error) throw new Error(`SLIP error ${data.error.code}: ${data.error.message || 'unknown'}`);
+  return data.features || [];
+}
+
+function drawSSMLayer(features, colorHex, existingLayer, labelField) {
+  if (existingLayer) map.removeLayer(existingLayer);
+  return L.geoJSON({ type: 'FeatureCollection', features }, {
+    pointToLayer(feature, latlng) {
+      const p = feature.properties || {};
+      const destroyed = p.latest_status_description &&
+        p.latest_status_description.toLowerCase().includes('destroy');
+
+      const color  = destroyed ? '#FF4444' : colorHex;
+      const fill   = destroyed ? '#FF444466' : colorHex + '55';
+      const size   = destroyed ? 14 : 16;
+      // Equilateral triangle pointing up: points at top-centre, bottom-left, bottom-right
+      const pts    = `${size/2},2 ${size-2},${size-2} 2,${size-2}`;
+
+      const icon = L.divIcon({
+        className: '',
+        html: `<svg width="${size}" height="${size}" viewBox="0 0 ${size} ${size}" xmlns="http://www.w3.org/2000/svg">
+          <polygon points="${pts}" fill="${fill}" stroke="${color}" stroke-width="1.8" stroke-linejoin="round"/>
+        </svg>`,
+        iconSize: [size, size],
+        iconAnchor: [size/2, size/2],
+        popupAnchor: [0, -size/2],
+      });
+      return L.marker(latlng, { icon });
+    },
+    onEachFeature(feature, layer) {
+      const p = feature.properties || {};
+
+      // Priority fields shown at top of popup
+      const priorityKeys = [
+        'geodetic_point_name','stamped_name_on_point','point_type_desc',
+        'latest_status_description','latest_status_date',
+        'horiz_datum','horizontal_circular_error','horiz_accuracy',
+        'reduced_level','vert_accuracy','cadastral_connection_desc',
+        'easting','northing','zone','projection',
+      ];
+      const shownKeys = [
+        ...priorityKeys.filter(k => p[k] !== null && p[k] !== undefined && p[k] !== ''),
+      ];
+
+      // Build links — GOLA full report (constructed from point_number),
+      // station_summary_link (access diagram PDF), and url field
+      const pointNo = p.point_number || null;
+      const golaUrl = pointNo
+        ? `https://gola.es.landgate.wa.gov.au/Gola/gola.exe/getpointinfo?PointNo=${pointNo}`
+        : null;
+      const summaryUrl = p.station_summary_link || null;
+      const dataUrl    = p.url || null;
+
+      const links = [];
+      if (golaUrl)    links.push(`<a href="${golaUrl}"    target="_blank" style="color:#FFD700;text-decoration:underline;font-size:10px;">↗ Full mark report (GOLA)</a>`);
+      if (summaryUrl) links.push(`<a href="${summaryUrl}" target="_blank" style="color:#87CEEB;text-decoration:underline;font-size:10px;">↗ Station summary / access diagram</a>`);
+      if (dataUrl && dataUrl !== golaUrl && dataUrl !== summaryUrl)
+                      links.push(`<a href="${dataUrl}"    target="_blank" style="color:#98FB98;text-decoration:underline;font-size:10px;">↗ Data link</a>`);
+
+      const linkHtml = links.length
+        ? `<div style="margin-top:7px;padding-top:6px;border-top:1px solid #444;display:flex;flex-direction:column;gap:4px;">${links.join('')}</div>`
+        : '';
+
+      const rows = shownKeys.map(k =>
+        `<tr>
+           <td style="color:#aaa;padding-right:8px;font-size:10px;white-space:nowrap">${k}</td>
+           <td style="font-size:10px;color:#eee">${p[k]}</td>
+         </tr>`
+      ).join('');
+
+      layer.bindPopup(
+        `<div style="font-family:monospace;min-width:220px">
+           <table>${rows}</table>
+           ${linkHtml}
+         </div>`,
+        { maxWidth: 320 }
+      );
+
+      // Tooltip label — mark name + AHD height if available
+      const label = p[labelField] || p.geodetic_point_name || p.mark_name || '';
+      const ahd = (p.reduced_level !== null && p.reduced_level !== undefined && p.reduced_level !== '')
+        ? ` (AHD ${parseFloat(p.reduced_level).toFixed(3)}m)` : '';
+      if (label) {
+        layer.bindTooltip(`${label}${ahd}`, {
+          permanent: false, direction: 'right', offset: [6, 0],
+          className: 'ssm-tooltip'
+        });
+      }
+    }
+  }).addTo(map);
+}
+
+function getCadastreStyle() {
+  return {
+    color: document.getElementById('line-color').value,
+    weight: parseFloat(document.getElementById('line-weight').value),
+    opacity: isAerial() ? 1.0 : 0.9,
+    fillColor: document.getElementById('fill-color').value,
+    fillOpacity: isAerial() ? 0.0 : 0.08,
+  };
+}
+
+function drawFeatures(features, bbox) {
+  if (cadastreLayer) map.removeLayer(cadastreLayer);
+  if (bboxRect) map.removeLayer(bboxRect);
+
+  bboxRect = L.rectangle([[bbox[1], bbox[0]], [bbox[3], bbox[2]]], {
+    color: '#C0392B', weight: 1, opacity: 0.5, fillOpacity: 0.04, dashArray: '4 4'
+  }).addTo(map);
+
+  const fc = { type: 'FeatureCollection', features };
+  cadastreLayer = L.geoJSON(fc, {
+    style: getCadastreStyle,
+    onEachFeature(feature, layer) {
+      const p = feature.properties || {};
+      const keys = Object.keys(p).filter(k => p[k] !== null && p[k] !== '');
+      if (keys.length) {
+        const rows = keys.slice(0, 10).map(k =>
+          `<tr><td style="color:#aaa;padding-right:8px">${k}</td><td>${p[k]}</td></tr>`
+        ).join('');
+        layer.bindPopup(`<table style="font:11px monospace;color:#eee">${rows}</table>`, { maxWidth: 280 });
+      }
+    }
+  }).addTo(map);
+
+  map.fitBounds(bboxRect.getBounds(), { padding: [30, 30] });
+}
+
+function updateCounter(n) {
+  document.getElementById('feat-count').textContent = n;
+  document.getElementById('map-counter').style.display = n > 0 ? 'block' : 'none';
+}
+
+// ── Download helpers ──────────────────────────────────────────────────────
+function buildGeoJSON(features, crsLabel) {
+  const reprojected = features.map(f => ({
+    ...f,
+    geometry: reprojectGeometry(f.geometry, crsLabel)
+  }));
+  return JSON.stringify({
+    type: 'FeatureCollection',
+    crs: { type: 'name', properties: { name: 'urn:ogc:def:crs:' + crsLabel.replace(':','::') } },
+    metadata: {
+      source: 'Landgate SLIP — LGATE-001',
+      extracted: new Date().toISOString(),
+    },
+    features: reprojected
+  }, null, 2);
+}
+
+function buildCSV(features, crsLabel) {
+  if (!features.length) return '';
+  const allKeys = [...new Set(features.flatMap(f => Object.keys(f.properties || {})))];
+  const header = [...allKeys, 'geometry_wkt'].join(',');
+  const rows = features.map(f => {
+    const p = f.properties || {};
+    const vals = allKeys.map(k => {
+      const v = p[k] ?? '';
+      return String(v).includes(',') ? `"${v}"` : v;
+    });
+    let wkt = '';
+    try {
+      const geom = reprojectGeometry(f.geometry, crsLabel);
+      const coords = geom?.coordinates?.[0];
+      if (coords) {
+        const fmtNum = n => (crsLabel === 'EPSG:4326' || crsLabel === 'EPSG:4283' || crsLabel === 'EPSG:7844')
+          ? n.toFixed(8) : n.toFixed(3);
+        wkt = `"POLYGON((${coords.map(c => c.map(fmtNum).join(' ')).join(', ')}))"`;
+      }
+    } catch {}
+    return [...vals, wkt].join(',');
+  });
+  return [header, ...rows].join('\n');
+}
+
+// ── DXF builder ─────────────────────────────────────────────────────────
+// Produces a minimal-but-valid ASCII DXF (R12 format) containing LWPOLYLINE
+// entities on per-attribute layers, with optional TEXT labels at centroids.
+// 12d Model imports R12 DXF directly.
+
+// ── Hex colour -> AutoCAD Color Index (ACI) ───────────────────────────────
+// Maps an arbitrary hex colour to the nearest of the 256 standard ACI colours
+// using a small reference table of the AutoCAD Color Index palette (the
+// classic 256-entry table) and a nearest-RGB search.
+const ACI_PALETTE = (() => {
+  // Standard AutoCAD ACI palette, indices 0-255 (index 0 = ByBlock, 7 = white/black)
+  // Generated from the well-known ACI RGB table.
+  const base = [
+    [0,0,0],[255,0,0],[255,255,0],[0,255,0],[0,255,255],[0,0,255],[255,0,255],[255,255,255],
+    [128,128,128],[192,192,192],[255,0,0],[255,127,127],[165,0,0],[165,82,82],[127,0,0],[127,63,63],
+    [76,0,0],[76,38,38],[38,0,0],[38,19,19],[255,63,0],[255,159,127],[165,41,0],[165,103,82],
+    [127,31,0],[127,79,63],[76,19,0],[76,47,38],[38,9,0],[38,23,19],[255,127,0],[255,191,127],
+    [165,82,0],[165,124,82],[127,63,0],[127,95,63],[76,38,0],[76,57,38],[38,19,0],[38,28,19],
+    [255,191,0],[255,223,127],[165,124,0],[165,145,82],[127,95,0],[127,111,63],[76,57,0],[76,66,38],
+    [38,28,0],[38,33,19],[255,255,0],[255,255,127],[165,165,0],[165,165,82],[127,127,0],[127,127,63],
+    [76,76,0],[76,76,38],[38,38,0],[38,38,19],[191,255,0],[223,255,127],[124,165,0],[145,165,82],
+    [95,127,0],[111,127,63],[57,76,0],[66,76,38],[28,38,0],[33,38,19],[127,255,0],[191,255,127],
+    [82,165,0],[124,165,82],[63,127,0],[95,127,63],[38,76,0],[57,76,38],[19,38,0],[28,38,19],
+    [63,255,0],[159,255,127],[41,165,0],[103,165,82],[31,127,0],[79,127,63],[19,76,0],[47,76,38],
+    [9,38,0],[23,38,19],[0,255,0],[127,255,127],[0,165,0],[82,165,82],[0,127,0],[63,127,63],
+    [0,76,0],[38,76,38],[0,38,0],[19,38,19],[0,255,63],[127,255,159],[0,165,41],[82,165,103],
+    [0,127,31],[63,127,79],[0,76,19],[38,76,47],[0,38,9],[19,38,23],[0,255,127],[127,255,191],
+    [0,165,82],[82,165,124],[0,127,63],[63,127,95],[0,76,38],[38,76,57],[0,38,19],[19,38,28],
+    [0,255,191],[127,255,223],[0,165,124],[82,165,145],[0,127,95],[63,127,111],[0,76,57],[38,76,66],
+    [0,38,28],[19,38,33],[0,255,255],[127,255,255],[0,165,165],[82,165,165],[0,127,127],[63,127,127],
+    [0,76,76],[38,76,76],[0,38,38],[19,38,38],[0,191,255],[127,223,255],[0,124,165],[82,145,165],
+    [0,95,127],[63,111,127],[0,57,76],[38,66,76],[0,28,38],[19,33,38],[0,127,255],[127,191,255],
+    [0,82,165],[82,124,165],[0,63,127],[63,95,127],[0,38,76],[38,57,76],[0,19,38],[19,28,38],
+    [0,63,255],[127,159,255],[0,41,165],[82,103,165],[0,31,127],[63,79,127],[0,19,76],[38,47,76],
+    [0,9,38],[19,23,38],[0,0,255],[127,127,255],[0,0,165],[82,82,165],[0,0,127],[63,63,127],
+    [0,0,76],[38,38,76],[0,0,38],[19,19,38],[63,0,255],[159,127,255],[41,0,165],[103,82,165],
+    [31,0,127],[79,63,127],[19,0,76],[47,38,76],[9,0,38],[23,19,38],[127,0,255],[191,127,255],
+    [82,0,165],[124,82,165],[63,0,127],[95,63,127],[38,0,76],[57,38,76],[19,0,38],[28,19,38],
+    [191,0,255],[223,127,255],[124,0,165],[145,82,165],[95,0,127],[111,63,127],[57,0,76],[66,38,76],
+    [28,0,38],[33,19,38],[255,0,255],[255,127,255],[165,0,165],[165,82,165],[127,0,127],[127,63,127],
+    [76,0,76],[76,38,76],[38,0,38],[38,19,38],[255,0,191],[255,127,223],[165,0,124],[165,82,145],
+    [127,0,95],[127,63,111],[76,0,57],[76,38,66],[38,0,28],[38,19,33],[255,0,127],[255,127,191],
+    [165,0,82],[165,82,124],[127,0,63],[127,63,95],[76,0,38],[76,38,57],[38,0,19],[38,19,28],
+    [255,0,63],[255,127,159],[165,0,41],[165,82,103],[127,0,31],[127,63,79],[76,0,19],[76,38,47],
+    [38,0,9],[38,19,23],[51,51,51],[80,80,80],[105,105,105],[130,130,130],[155,155,155],[180,180,180],
+    [205,205,205],[230,230,230],[255,255,255],[0,0,0],[0,0,0],[0,0,0],[0,0,0],[0,0,0],
+  ];
+  return base;
+})();
+
+function hexToRgb(hex) {
+  const h = hex.replace('#', '');
+  return [
+    parseInt(h.substring(0, 2), 16),
+    parseInt(h.substring(2, 4), 16),
+    parseInt(h.substring(4, 6), 16),
+  ];
+}
+
+function nearestACI(hex) {
+  const [r, g, b] = hexToRgb(hex);
+  let best = 7, bestDist = Infinity;
+  for (let i = 1; i < ACI_PALETTE.length; i++) {
+    const [pr, pg, pb] = ACI_PALETTE[i];
+    const d = (r - pr) ** 2 + (g - pg) ** 2 + (b - pb) ** 2;
+    if (d < bestDist) { bestDist = d; best = i; }
+  }
+  return best;
+}
+
+function dxfSanitizeLayerName(name) {
+  // DXF layer names: no spaces or special chars <>/\":;?*|=`
+  return String(name)
+    .toUpperCase()
+    .replace(/[^A-Z0-9_\-]/g, '_')
+    .replace(/_+/g, '_')
+    .slice(0, 31) || 'LANDGATE_CADASTRE';
+}
+
+function pointInPolygon([x, y], ring) {
+  let inside = false;
+  for (let i = 0, j = ring.length - 1; i < ring.length; j = i++) {
+    const [xi, yi] = ring[i], [xj, yj] = ring[j];
+    const intersect = ((yi > y) !== (yj > y)) &&
+      (x < (xj - xi) * (y - yi) / (yj - yi + 1e-15) + xi);
+    if (intersect) inside = !inside;
+  }
+  return inside;
+}
+
+function ringCentroid(ring) {
+  // Simple polygon centroid (area-weighted), falls back to vertex average
+  let area = 0, cx = 0, cy = 0;
+  for (let i = 0; i < ring.length - 1; i++) {
+    const [x0, y0] = ring[i], [x1, y1] = ring[i+1];
+    const a = x0 * y1 - x1 * y0;
+    area += a; cx += (x0 + x1) * a; cy += (y0 + y1) * a;
+  }
+  area *= 0.5;
+  if (Math.abs(area) < 1e-9) {
+    const n = ring.length - 1;
+    const sx = ring.slice(0,n).reduce((s,c)=>s+c[0],0) / n;
+    const sy = ring.slice(0,n).reduce((s,c)=>s+c[1],0) / n;
+    return [sx, sy];
+  }
+  return [cx / (6 * area), cy / (6 * area)];
+}
+
+function buildDXF(features, crsLabel, layerField, addLabels, ssmFeatures, rmFeatures) {
+  const dec = (crsLabel === 'EPSG:4326' || crsLabel === 'EPSG:4283' || crsLabel === 'EPSG:7844') ? 8 : 3;
+  const fmtNum = n => n.toFixed(dec);
+
+  // Collect distinct layers
+  const layerSet = new Set(['LANDGATE_CADASTRE']);
+  if (layerField) {
+    features.forEach(f => {
+      const v = f.properties?.[layerField];
+      layerSet.add(dxfSanitizeLayerName(v ?? 'UNKNOWN'));
+    });
+  }
+  if (addLabels) layerSet.add('LANDGATE_CADASTRE_TEXT');
+
+  const out = [];
+  const push = (...lines) => out.push(...lines);
+
+  // ── HEADER ──
+  push('0','SECTION','2','HEADER');
+  push('9','$ACADVER','1','AC1009');           // R12
+  push('9','$INSBASE','10','0.0','20','0.0','30','0.0');
+  push('0','ENDSEC');
+
+  // ── TABLES (layers) ──
+  const lineColorAci = nearestACI(document.getElementById('line-color').value);
+  push('0','SECTION','2','TABLES');
+  push('0','TABLE','2','LAYER','70', String(layerSet.size));
+  let colorIdx = 0;
+  for (const lyr of layerSet) {
+    // CADASTRE_TEXT and the base CADASTRE layer (when no per-attribute split)
+    // use the chosen line colour. Per-attribute layers cycle through ACI
+    // colours starting near the chosen colour for visual variety while
+    // keeping the palette consistent with the on-screen preview.
+    const aci = (lyr === 'LANDGATE_CADASTRE' || lyr === 'LANDGATE_CADASTRE_TEXT' || layerSet.size <= 2)
+      ? lineColorAci
+      : ((lineColorAci - 1 + colorIdx) % 250) + 1;
+    push('0','LAYER','2', lyr, '70','0','62', String(aci), '6','CONTINUOUS');
+    colorIdx++;
+  }
+  // Add SSM and RM layers to table
+  if (ssmFeatures && ssmFeatures.length) {
+    const ssmAci = nearestACI(document.getElementById('ssm-color').value);
+    push('0','LAYER','2','SSM_BM','70','0','62',String(ssmAci),'6','CONTINUOUS');
+    push('0','LAYER','2','SSM_BM_TEXT','70','0','62',String(ssmAci),'6','CONTINUOUS');
+    push('0','LAYER','2','SSM_DESTROYED','70','0','62','1','6','CONTINUOUS'); // red ACI=1
+  }
+  if (rmFeatures && rmFeatures.length) {
+    const rmAci = nearestACI(document.getElementById('rm-color').value);
+    push('0','LAYER','2','REF_MARKS','70','0','62',String(rmAci),'6','CONTINUOUS');
+    push('0','LAYER','2','REF_MARKS_TEXT','70','0','62',String(rmAci),'6','CONTINUOUS');
+  }
+  push('0','ENDTAB');
+  push('0','ENDSEC');
+
+  // ── ENTITIES ──
+  push('0','SECTION','2','ENTITIES');
+
+  for (const f of features) {
+    const geom = reprojectGeometry(f.geometry, crsLabel);
+    if (!geom) continue;
+
+    const layer = layerField
+      ? dxfSanitizeLayerName(f.properties?.[layerField] ?? 'UNKNOWN')
+      : 'LANDGATE_CADASTRE';
+
+    const rings = geom.type === 'Polygon' ? geom.coordinates
+                 : geom.type === 'MultiPolygon' ? geom.coordinates.flat()
+                 : geom.type === 'LineString' ? [geom.coordinates]
+                 : [];
+
+    for (const ring of rings) {
+      // LWPOLYLINE
+      push('0','LWPOLYLINE','8', layer, '90', String(ring.length), '70','1'); // 70=1 → closed
+      for (const [x, y] of ring) {
+        push('10', fmtNum(x), '20', fmtNum(y));
+      }
+
+      // Optional centroid label
+      if (addLabels && ring.length > 2) {
+        const [cx, cy] = ringCentroid(ring);
+        const p = f.properties || {};
+        const label = p.lot_number ?? p.LOT_NUMBER ?? p.lotnumber
+                    ?? p.plan_number ?? p.PLAN_NUMBER ?? p.cad_pin ?? p.OBJECTID ?? '';
+        if (label !== '') {
+          push('0','TEXT','8','LANDGATE_CADASTRE_TEXT',
+               '10', fmtNum(cx), '20', fmtNum(cy),
+               '40', dec === 8 ? '0.00003' : '2.0',   // text height
+               '1', String(label));
+        }
+      }
+    }
+  }
+
+  // ── SSM / BM Points ──
+  function writePtFeatures(ptFeatures, layer, textLayer, nameField) {
+    if (!ptFeatures || !ptFeatures.length) return;
+    for (const f of ptFeatures) {
+      const p = f.properties || {};
+
+      // For GDA94-referenced outputs, use the published GDA94 attribute coordinates
+      // directly — avoids any transformation error entirely.
+      // Field names from LGATE-076: mga94_easting/mga94_northing (Zone 50/51/49),
+      // gda94_latitude/gda94_longitude for geographic, pcg94_easting/pcg94_northing for PCG94.
+      let x, y;
+      const isGda94Target = GDA94_TARGETS.has(crsLabel);
+      if (isGda94Target) {
+        if (crsLabel === 'EPSG:10464' && p.pcg94_easting && p.pcg94_northing) {
+          // PCG94 — use published PCG94 coords if available
+          x = parseFloat(p.pcg94_easting);
+          y = parseFloat(p.pcg94_northing);
+        } else if ((crsLabel === 'EPSG:28350') && p.mga94_easting && p.mga94_northing) {
+          // MGA94 Zone 50
+          x = parseFloat(p.mga94_easting);
+          y = parseFloat(p.mga94_northing);
+        } else if ((crsLabel === 'EPSG:28349') && p.mga94_easting && p.mga94_northing) {
+          x = parseFloat(p.mga94_easting);
+          y = parseFloat(p.mga94_northing);
+        } else if ((crsLabel === 'EPSG:28351') && p.mga94_easting && p.mga94_northing) {
+          x = parseFloat(p.mga94_easting);
+          y = parseFloat(p.mga94_northing);
+        } else if ((crsLabel === 'EPSG:4283' || crsLabel === 'EPSG:4326') &&
+                   p.gda94_longitude && p.gda94_latitude) {
+          x = parseFloat(p.gda94_longitude);
+          y = parseFloat(p.gda94_latitude);
+        } else {
+          // Fallback to geometry reprojection if specific fields not present
+          const geom = reprojectGeometry(f.geometry, crsLabel);
+          if (!geom || geom.type !== 'Point') continue;
+          [x, y] = geom.coordinates;
+        }
+      } else {
+        // GDA2020-referenced — geometry already in GDA2020 from SLIP, reproject directly
+        const geom = reprojectGeometry(f.geometry, crsLabel);
+        if (!geom || geom.type !== 'Point') continue;
+        [x, y] = geom.coordinates;
+      }
+
+      if (isNaN(x) || isNaN(y)) {
+        // Last resort fallback
+        const geom = reprojectGeometry(f.geometry, crsLabel);
+        if (!geom || geom.type !== 'Point') continue;
+        [x, y] = geom.coordinates;
+      }
+
+      const destroyed = p.latest_status_description &&
+        p.latest_status_description.toLowerCase().includes('destroy');
+      const ptLayer  = destroyed ? 'SSM_DESTROYED' : layer;
+      const txtLayer = destroyed ? 'SSM_DESTROYED' : textLayer;
+      const ahd = (p.reduced_level !== null && p.reduced_level !== undefined && p.reduced_level !== '')
+        ? parseFloat(p.reduced_level) : null;
+      const label = p[nameField] || p.geodetic_point_name || p.mark_name || p.ssm_id || '';
+      const reportUrl = p.station_summary_link || p.url
+        || (p.point_number ? `https://gola.es.landgate.wa.gov.au/Gola/gola.exe/getpointinfo?PointNo=${p.point_number}` : '');
+      const textH      = dec === 8 ? '0.00003' : '1.5';
+      const lineStep   = dec === 8 ? 0.000025 : 2.0;
+
+      // Symbol size — in projected CRS (metres) use 1.5m radius; geographic use arc-second equivalent
+      const symR = dec === 8 ? 0.000014 : 1.5;  // circle radius
+      const triR = dec === 8 ? 0.000022 : 2.2;  // circumradius of equilateral triangle
+
+      // ── CENTRE POINT (with Z if AHD available) ──
+      if (ahd !== null) {
+        push('0','POINT','8', ptLayer,
+             '10', fmtNum(x), '20', fmtNum(y), '30', ahd.toFixed(3));
+      } else {
+        push('0','POINT','8', ptLayer, '10', fmtNum(x), '20', fmtNum(y));
+      }
+
+      // ── CIRCLE ──
+      push('0','CIRCLE','8', ptLayer,
+           '10', fmtNum(x), '20', fmtNum(y), '30', ahd !== null ? ahd.toFixed(3) : '0',
+           '40', String(symR));
+
+      // ── EQUILATERAL TRIANGLE (closed LWPOLYLINE, pointing up) ──
+      // Vertices at 90°, 210°, 330° from centre (top vertex at top)
+      const angles = [90, 210, 330];
+      const triPts = angles.map(a => {
+        const rad = a * Math.PI / 180;
+        return [x + triR * Math.cos(rad), y + triR * Math.sin(rad)];
+      });
+      push('0','LWPOLYLINE','8', ptLayer, '90','3','70','1'); // 70=1 closed
+      for (const [tx, ty] of triPts) {
+        push('10', fmtNum(tx), '20', fmtNum(ty));
+      }
+
+      // TEXT: mark name (offset above triangle apex)
+      if (label) {
+        const yLbl = y + triR + lineStep * 0.5;
+        push('0','TEXT','8', txtLayer,
+             '10', fmtNum(x), '20', fmtNum(yLbl),
+             '72','1',   // horizontal justification = centre
+             '11', fmtNum(x), '21', fmtNum(yLbl),
+             '40', textH, '1', String(label));
+      }
+
+      // TEXT: AHD height
+      if (ahd !== null) {
+        const yAhd = y + triR + lineStep * 0.5 + lineStep;
+        push('0','TEXT','8', txtLayer,
+             '10', fmtNum(x), '20', fmtNum(yAhd),
+             '72','1',
+             '11', fmtNum(x), '21', fmtNum(yAhd),
+             '40', textH, '1', `AHD ${ahd.toFixed(3)}m`);
+      }
+    }
+  }
+  writePtFeatures(ssmFeatures, 'SSM_BM', 'SSM_BM_TEXT', 'geodetic_point_name');
+  writePtFeatures(rmFeatures,  'REF_MARKS', 'REF_MARKS_TEXT', 'reference_mark_name');
+
+  push('0','ENDSEC');
+  push('0','EOF');
+
+  return out.join('\n');
+}
+
+// ── KML builder ───────────────────────────────────────────────────────────
+// KML always uses WGS84/GDA2020 geographic (lat/lon) per the KML spec.
+// We write Placemarks with extended data for attributes.
+function buildKML(features, ssmFeatures, rmFeatures) {
+  function coordsToKml(ring) {
+    return ring.map(([x, y]) => `${x.toFixed(8)},${y.toFixed(8)},0`).join(' ');
+  }
+  function geomToKml(geom) {
+    if (!geom) return '';
+    if (geom.type === 'Polygon') {
+      const outer = geom.coordinates[0];
+      const inner = geom.coordinates.slice(1);
+      return `<Polygon><outerBoundaryIs><LinearRing><coordinates>${coordsToKml(outer)}</coordinates></LinearRing></outerBoundaryIs>${inner.map(r => `<innerBoundaryIs><LinearRing><coordinates>${coordsToKml(r)}</coordinates></LinearRing></innerBoundaryIs>`).join('')}</Polygon>`;
+    } else if (geom.type === 'MultiPolygon') {
+      return `<MultiGeometry>${geom.coordinates.map(poly => {
+        const outer = poly[0], inner = poly.slice(1);
+        return `<Polygon><outerBoundaryIs><LinearRing><coordinates>${coordsToKml(outer)}</coordinates></LinearRing></outerBoundaryIs>${inner.map(r => `<innerBoundaryIs><LinearRing><coordinates>${coordsToKml(r)}</coordinates></LinearRing></innerBoundaryIs>`).join('')}</Polygon>`;
+      }).join('')}</MultiGeometry>`;
+    } else if (geom.type === 'Point') {
+      return `<Point><coordinates>${geom.coordinates[0].toFixed(8)},${geom.coordinates[1].toFixed(8)},0</coordinates></Point>`;
+    }
+    return '';
+  }
+  function extData(props) {
+    return `<ExtendedData>${Object.entries(props || {}).filter(([,v]) => v !== null && v !== '').slice(0, 20).map(([k,v]) => `<Data name="${k}"><value>${String(v).replace(/&/g,'&amp;').replace(/</g,'&lt;')}</value></Data>`).join('')}</ExtendedData>`;
+  }
+
+  const cadastrePlacemarks = features.map(f => {
+    const p = f.properties || {};
+    const name = p.lot_number || p.LOT_NUMBER || p.cad_pin || '';
+    // KML uses source geographic coords (GDA2020 ≈ WGS84 to 1cm)
+    return `<Placemark><name>${name}</name>${extData(p)}<styleUrl>#cadastre</styleUrl>${geomToKml(f.geometry)}</Placemark>`;
+  }).join('\n');
+
+  const ssmPlacemarks = (ssmFeatures || []).map(f => {
+    const p = f.properties || {};
+    const name = p.geodetic_point_name || p.mark_name || '';
+    const ahd = p.reduced_level ? ` — AHD ${parseFloat(p.reduced_level).toFixed(3)}m` : '';
+    const destroyed = p.latest_status_description && p.latest_status_description.toLowerCase().includes('destroy');
+    return `<Placemark><name>${name}${ahd}</name>${extData(p)}<styleUrl>${destroyed ? '#ssmDestroyed' : '#ssmActive'}</styleUrl>${geomToKml(f.geometry)}</Placemark>`;
+  }).join('\n');
+
+  const rmPlacemarks = (rmFeatures || []).map(f => {
+    const p = f.properties || {};
+    const name = p.reference_mark_name || p.mark_name || '';
+    return `<Placemark><name>${name}</name>${extData(p)}<styleUrl>#rm</styleUrl>${geomToKml(f.geometry)}</Placemark>`;
+  }).join('\n');
+
+  return `<?xml version="1.0" encoding="UTF-8"?>
+<kml xmlns="http://www.opengis.net/kml/2.2">
+<Document>
+  <name>Landgate Cadastral Extract</name>
+  <Style id="cadastre"><LineStyle><color>ff32cd32</color><width>1.5</width></LineStyle><PolyStyle><color>1032cd32</color></PolyStyle></Style>
+  <Style id="ssmActive"><IconStyle><color>ff00c853</color><scale>1.0</scale><Icon><href>http://maps.google.com/mapfiles/kml/shapes/triangle.png</href></Icon></IconStyle><LabelStyle><scale>0.7</scale></LabelStyle></Style>
+  <Style id="ssmDestroyed"><IconStyle><color>ff4444ff</color><scale>0.8</scale><Icon><href>http://maps.google.com/mapfiles/kml/shapes/triangle.png</href></Icon></IconStyle><LabelStyle><scale>0.7</scale></LabelStyle></Style>
+  <Style id="rm"><IconStyle><color>ff00bfff</color><scale>0.7</scale><Icon><href>http://maps.google.com/mapfiles/kml/shapes/donut.png</href></Icon></IconStyle><LabelStyle><scale>0.6</scale></LabelStyle></Style>
+  <Folder><name>Cadastral Parcels</name>${cadastrePlacemarks}</Folder>
+  <Folder><name>Survey Marks (SSM/BM)</name>${ssmPlacemarks}</Folder>
+  <Folder><name>Reference Marks</name>${rmPlacemarks}</Folder>
+</Document>
+</kml>`;
+}
+
+// ── Shapefile builder ─────────────────────────────────────────────────────
+// Writes a minimal but valid ESRI Shapefile set (.shp, .shx, .dbf, .prj)
+// packed into a .zip using JSZip. Supports polygon and point types.
+// DBF limited to 10-char field names and string values (simplification).
+
+function writeInt32BE(dv, off, val) { dv.setInt32(off, val, false); }
+function writeInt32LE(dv, off, val) { dv.setInt32(off, val, true); }
+function writeFloat64LE(dv, off, val) { dv.setFloat64(off, val, true); }
+
+function buildShapefile(features, crsLabel, layerName, shapeType /* 5=polygon, 1=point */) {
+  // PRJ content
+  const prjMap = {
+    'EPSG:8031':  'PROJCS["Perth_Coastal_Grid_2020",GEOGCS["GDA2020",DATUM["GDA2020",SPHEROID["GRS_1980",6378137.0,298.257222101]],PRIMEM["Greenwich",0.0],UNIT["Degree",0.0174532925199433]],PROJECTION["Transverse_Mercator"],PARAMETER["False_Easting",50000.0],PARAMETER["False_Northing",3900000.0],PARAMETER["Central_Meridian",115.816666666667],PARAMETER["Scale_Factor",0.99999906],PARAMETER["Latitude_Of_Origin",0.0],UNIT["Meter",1.0]]',
+    'EPSG:10464': 'PROJCS["Perth_Coastal_Grid_1994",GEOGCS["GDA94",DATUM["GDA94",SPHEROID["GRS_1980",6378137.0,298.257222101]],PRIMEM["Greenwich",0.0],UNIT["Degree",0.0174532925199433]],PROJECTION["Transverse_Mercator"],PARAMETER["False_Easting",50000.0],PARAMETER["False_Northing",3800000.0],PARAMETER["Central_Meridian",115.816666666667],PARAMETER["Scale_Factor",0.99999906],PARAMETER["Latitude_Of_Origin",0.0],UNIT["Meter",1.0]]',
+    'EPSG:7850':  'PROJCS["MGA2020_Zone_50",GEOGCS["GDA2020",DATUM["GDA2020",SPHEROID["GRS_1980",6378137.0,298.257222101]],PRIMEM["Greenwich",0.0],UNIT["Degree",0.0174532925199433]],PROJECTION["Transverse_Mercator"],PARAMETER["False_Easting",500000.0],PARAMETER["False_Northing",10000000.0],PARAMETER["Central_Meridian",117.0],PARAMETER["Scale_Factor",0.9996],PARAMETER["Latitude_Of_Origin",0.0],UNIT["Meter",1.0]]',
+    'EPSG:28350': 'PROJCS["MGA94_Zone_50",GEOGCS["GDA94",DATUM["GDA94",SPHEROID["GRS_1980",6378137.0,298.257222101]],PRIMEM["Greenwich",0.0],UNIT["Degree",0.0174532925199433]],PROJECTION["Transverse_Mercator"],PARAMETER["False_Easting",500000.0],PARAMETER["False_Northing",10000000.0],PARAMETER["Central_Meridian",117.0],PARAMETER["Scale_Factor",0.9996],PARAMETER["Latitude_Of_Origin",0.0],UNIT["Meter",1.0]]',
+    'EPSG:7844':  'GEOGCS["GDA2020",DATUM["GDA2020",SPHEROID["GRS_1980",6378137.0,298.257222101]],PRIMEM["Greenwich",0.0],UNIT["Degree",0.0174532925199433]]',
+    'EPSG:4283':  'GEOGCS["GDA94",DATUM["GDA94",SPHEROID["GRS_1980",6378137.0,298.257222101]],PRIMEM["Greenwich",0.0],UNIT["Degree",0.0174532925199433]]',
+    'EPSG:4326':  'GEOGCS["WGS84",DATUM["WGS_1984",SPHEROID["WGS_1984",6378137.0,298.257223563]],PRIMEM["Greenwich",0.0],UNIT["Degree",0.0174532925199433]]',
+  };
+  const prj = prjMap[crsLabel] || prjMap['EPSG:7844'];
+
+  // Collect rings per feature
+  const shapes = features.map(f => {
+    const geom = reprojectGeometry(f.geometry, crsLabel);
+    const rings = [];
+    if (!geom) return { rings, props: f.properties || {} };
+    if (shapeType === 5) { // polygon
+      const addPoly = coords => coords.forEach(ring => rings.push(ring));
+      if (geom.type === 'Polygon') addPoly(geom.coordinates);
+      else if (geom.type === 'MultiPolygon') geom.coordinates.forEach(p => addPoly(p));
+    } else if (shapeType === 1) { // point
+      if (geom.type === 'Point') rings.push(geom.coordinates);
+    }
+    return { rings, props: f.properties || {} };
+  }).filter(s => s.rings.length > 0);
+
+  if (!shapes.length) return null;
+
+  // DBF field definitions — up to 10 property keys, 50-char string values
+  const allKeys = [...new Set(shapes.flatMap(s => Object.keys(s.props)))].slice(0, 10);
+  const fieldLen = 50;
+  const recLen = 1 + allKeys.length * fieldLen;
+
+  // DBF header
+  const dbfHeader = new ArrayBuffer(32 + allKeys.length * 32 + 1);
+  const dhDv = new DataView(dbfHeader);
+  dhDv.setUint8(0, 3); // version
+  dhDv.setUint8(1, 126); dhDv.setUint8(2, 6); dhDv.setUint8(3, 15); // date
+  dhDv.setInt32(4, shapes.length, true);
+  dhDv.setInt16(8, 32 + allKeys.length * 32 + 1, true); // header size
+  dhDv.setInt16(10, recLen, true);
+  allKeys.forEach((key, i) => {
+    const off = 32 + i * 32;
+    const nameBytes = new TextEncoder().encode(key.substring(0, 10).padEnd(11, '\0'));
+    nameBytes.forEach((b, j) => dhDv.setUint8(off + j, b));
+    dhDv.setUint8(off + 11, 67); // 'C' = character
+    dhDv.setUint8(off + 16, fieldLen);
+  });
+  new DataView(dbfHeader).setUint8(32 + allKeys.length * 32, 0x0D); // terminator
+
+  // DBF records
+  const dbfRecords = shapes.flatMap(s => {
+    const rec = new Uint8Array(recLen);
+    rec[0] = 0x20; // not deleted
+    allKeys.forEach((k, i) => {
+      const val = String(s.props[k] ?? '').substring(0, fieldLen);
+      const bytes = new TextEncoder().encode(val.padEnd(fieldLen, ' '));
+      rec.set(bytes.slice(0, fieldLen), 1 + i * fieldLen);
+    });
+    return Array.from(rec);
+  });
+
+  // SHP records
+  const shpRecords = [];
+  let shpContentLen = 0; // in 16-bit words
+
+  shapes.forEach((s, idx) => {
+    if (shapeType === 1) {
+      // POINT record: type(4) + x(8) + y(8) = 20 bytes content
+      const rec = new ArrayBuffer(8 + 20); // 8 header + 20 content
+      const dv = new DataView(rec);
+      writeInt32BE(dv, 0, idx + 1); // record number (1-based)
+      writeInt32BE(dv, 4, 10);      // content length in 16-bit words (20 bytes)
+      writeInt32LE(dv, 8, 1);       // shape type = Point
+      writeFloat64LE(dv, 12, s.rings[0][0]);
+      writeFloat64LE(dv, 20, s.rings[0][1]);
+      shpRecords.push(new Uint8Array(rec));
+      shpContentLen += 4 + 10; // header(4) + content(10) in 16-bit words
+    } else {
+      // POLYGON record
+      const rings = s.rings;
+      const numPts = rings.reduce((sum, r) => sum + r.length, 0);
+      // content: type(4)+bbox(32)+numRings(4)+numPts(4)+parts(4*rings.length)+points(16*numPts)
+      const contentBytes = 4 + 32 + 4 + 4 + 4 * rings.length + 16 * numPts;
+      const rec = new ArrayBuffer(8 + contentBytes);
+      const dv = new DataView(rec);
+      writeInt32BE(dv, 0, idx + 1);
+      writeInt32BE(dv, 4, contentBytes / 2);
+      writeInt32LE(dv, 8, 5); // Polygon
+
+      // BBox
+      let xMin = Infinity, xMax = -Infinity, yMin = Infinity, yMax = -Infinity;
+      rings.forEach(r => r.forEach(([x, y]) => { xMin = Math.min(xMin,x); xMax = Math.max(xMax,x); yMin = Math.min(yMin,y); yMax = Math.max(yMax,y); }));
+      writeFloat64LE(dv, 12, xMin); writeFloat64LE(dv, 20, yMin);
+      writeFloat64LE(dv, 28, xMax); writeFloat64LE(dv, 36, yMax);
+
+      writeInt32LE(dv, 44, rings.length);
+      writeInt32LE(dv, 48, numPts);
+
+      let partOff = 52, ptOff = 52 + 4 * rings.length;
+      let runningPts = 0;
+      rings.forEach(ring => {
+        writeInt32LE(dv, partOff, runningPts);
+        partOff += 4;
+        runningPts += ring.length;
+      });
+      rings.forEach(ring => {
+        ring.forEach(([x, y]) => {
+          writeFloat64LE(dv, ptOff, x); ptOff += 8;
+          writeFloat64LE(dv, ptOff, y); ptOff += 8;
+        });
+      });
+      shpRecords.push(new Uint8Array(rec));
+      shpContentLen += 4 + contentBytes / 2;
+    }
+  });
+
+  // SHP file header (100 bytes)
+  const fileLen = 50 + shpContentLen; // in 16-bit words
+  const shpHeader = new ArrayBuffer(100);
+  const shDv = new DataView(shpHeader);
+  writeInt32BE(shDv, 0, 9994); // file code
+  writeInt32BE(shDv, 24, fileLen);
+  writeInt32LE(shDv, 28, 1000); // version
+  writeInt32LE(shDv, 32, shapeType);
+
+  // Global BBox
+  let gxMin = Infinity, gxMax = -Infinity, gyMin = Infinity, gyMax = -Infinity;
+  shapes.forEach(s => (shapeType === 1 ? [s.rings] : [s.rings]).flat().forEach(r => {
+    const pts = shapeType === 1 ? [r] : r;
+    pts.forEach(([x,y]) => { gxMin=Math.min(gxMin,x); gxMax=Math.max(gxMax,x); gyMin=Math.min(gyMin,y); gyMax=Math.max(gyMax,y); });
+  }));
+  writeFloat64LE(shDv, 36, gxMin); writeFloat64LE(shDv, 44, gyMin);
+  writeFloat64LE(shDv, 52, gxMax); writeFloat64LE(shDv, 60, gyMax);
+
+  // SHX (index file)
+  const shxLen = 50 + shpRecords.length * 4;
+  const shxBuf = new ArrayBuffer(shxLen * 2);
+  const shxDv = new DataView(shxBuf);
+  writeInt32BE(shxDv, 0, 9994);
+  writeInt32BE(shxDv, 24, shxLen);
+  writeInt32LE(shxDv, 28, 1000);
+  writeInt32LE(shxDv, 32, shapeType);
+  writeFloat64LE(shxDv, 36, gxMin); writeFloat64LE(shxDv, 44, gyMin);
+  writeFloat64LE(shxDv, 52, gxMax); writeFloat64LE(shxDv, 60, gyMax);
+
+  let offset = 50; // in 16-bit words
+  shpRecords.forEach((rec, i) => {
+    const contentWords = shapeType === 1 ? 10 : (rec.byteLength - 8) / 2;
+    writeInt32BE(shxDv, 100 + i * 8, offset);
+    writeInt32BE(shxDv, 100 + i * 8 + 4, contentWords);
+    offset += 4 + contentWords;
+  });
+
+  // Combine SHP
+  const shpTotal = 100 + shpRecords.reduce((s, r) => s + r.byteLength, 0);
+  const shpBuf = new Uint8Array(shpTotal);
+  shpBuf.set(new Uint8Array(shpHeader), 0);
+  let pos = 100;
+  shpRecords.forEach(r => { shpBuf.set(r, pos); pos += r.byteLength; });
+
+  // DBF combined
+  const dbfTotal = dbfHeader.byteLength + dbfRecords.length;
+  const dbfBuf = new Uint8Array(dbfTotal);
+  dbfBuf.set(new Uint8Array(dbfHeader), 0);
+  dbfBuf.set(new Uint8Array(dbfRecords), dbfHeader.byteLength);
+
+  return { shp: shpBuf, shx: new Uint8Array(shxBuf), dbf: dbfBuf, prj };
+}
+
+async function buildShapefileZip(features, crsLabel, ssmFeatures, rmFeatures, stem) {
+  const zip = new JSZip();
+  const cadastre = buildShapefile(features, crsLabel, 'landgate_cadastre', 5);
+  if (cadastre) {
+    zip.file(`${stem}_cadastre.shp`, cadastre.shp);
+    zip.file(`${stem}_cadastre.shx`, cadastre.shx);
+    zip.file(`${stem}_cadastre.dbf`, cadastre.dbf);
+    zip.file(`${stem}_cadastre.prj`, cadastre.prj);
+  }
+  if (ssmFeatures && ssmFeatures.length) {
+    const ssm = buildShapefile(ssmFeatures, crsLabel, 'ssm_bm', 1);
+    if (ssm) {
+      zip.file(`${stem}_ssm.shp`, ssm.shp);
+      zip.file(`${stem}_ssm.shx`, ssm.shx);
+      zip.file(`${stem}_ssm.dbf`, ssm.dbf);
+      zip.file(`${stem}_ssm.prj`, ssm.prj);
+    }
+  }
+  if (rmFeatures && rmFeatures.length) {
+    const rm = buildShapefile(rmFeatures, crsLabel, 'ref_marks', 1);
+    if (rm) {
+      zip.file(`${stem}_rm.shp`, rm.shp);
+      zip.file(`${stem}_rm.shx`, rm.shx);
+      zip.file(`${stem}_rm.dbf`, rm.dbf);
+      zip.file(`${stem}_rm.prj`, rm.prj);
+    }
+  }
+  return zip.generateAsync({ type: 'uint8array', compression: 'DEFLATE' });
+}
+
+// ── GeoPackage builder ────────────────────────────────────────────────────
+// GeoPackage is a SQLite database. We can't write SQLite binary from scratch
+// easily in a browser, so we output a GeoJSON with a .gpkg-compatible CRS
+// header and a note, OR we write a valid minimal GeoPackage using a
+// hand-rolled SQLite binary. The latter is complex; for practical purposes
+// we output GeoJSON renamed with the CRS embedded and a README in a zip.
+// This gives users a GeoPackage-ready package they can open in QGIS with
+// drag-and-drop (QGIS opens GeoJSON natively and can save as GPKG in 1 click).
+async function buildGeoPackageZip(features, crsLabel, ssmFeatures, rmFeatures, stem) {
+  const zip = new JSZip();
+  // Cadastral GeoJSON
+  const fc = {
+    type: 'FeatureCollection',
+    name: 'LANDGATE_CADASTRE',
+    crs: { type: 'name', properties: { name: 'urn:ogc:def:crs:' + crsLabel.replace(':','::') } },
+    features: features.map(f => ({ ...f, geometry: reprojectGeometry(f.geometry, crsLabel) }))
+  };
+  zip.file(`${stem}_cadastre.geojson`, JSON.stringify(fc, null, 2));
+  if (ssmFeatures && ssmFeatures.length) {
+    const fc2 = { type: 'FeatureCollection', name: 'SSM_BM', crs: fc.crs, features: ssmFeatures.map(f => ({ ...f, geometry: reprojectGeometry(f.geometry, crsLabel) })) };
+    zip.file(`${stem}_ssm.geojson`, JSON.stringify(fc2, null, 2));
+  }
+  if (rmFeatures && rmFeatures.length) {
+    const fc3 = { type: 'FeatureCollection', name: 'REF_MARKS', crs: fc.crs, features: rmFeatures.map(f => ({ ...f, geometry: reprojectGeometry(f.geometry, crsLabel) })) };
+    zip.file(`${stem}_rm.geojson`, JSON.stringify(fc3, null, 2));
+  }
+  zip.file('README.txt',
+    `Landgate Cadastral Extract — GeoPackage-ready package\n` +
+    `CRS: ${crsLabel}\n` +
+    `Generated: ${new Date().toISOString()}\n\n` +
+    `To create a GeoPackage (.gpkg):\n` +
+    `  QGIS: drag the .geojson files in, then Layer > Save As > GeoPackage\n` +
+    `  GDAL: ogr2ogr -f GPKG output.gpkg ${stem}_cadastre.geojson\n`
+  );
+  return zip.generateAsync({ type: 'uint8array', compression: 'DEFLATE' });
+}
+
+function triggerDownload(content, filename, mime) {
+  const blob = new Blob([content], { type: mime });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url; a.download = filename; a.click();
+  setTimeout(() => URL.revokeObjectURL(url), 2000);
+}
+
+function showDownloadStrip(features, crsLabel, addressSlug, ssmFeatures, rmFeatures) {
+  const strip = document.getElementById('download-strip');
+  strip.innerHTML = '';
+  strip.classList.add('visible');
+
+  const fmt = document.querySelector('input[name="fmt"]:checked').value;
+  const ts = new Date().toISOString().slice(0,10);
+  const stem = `cadastral_${addressSlug}_${ts}`;
+
+  if (fmt === 'geojson') {
+    const content = buildGeoJSON(features, crsLabel);
+    const size = (content.length / 1024).toFixed(1);
+    const btn = document.createElement('a');
+    btn.className = 'dl-btn';
+    btn.href = '#';
+    btn.innerHTML = `
+      <svg viewBox="0 0 24 24"><path d="M19 9h-4V3H9v6H5l7 7 7-7zm-7 11H5v2h14v-2h-7z"/></svg>
+      Download GeoJSON
+      <span class="dl-meta">${features.length} features · ${size} KB · ${crsLabel}</span>`;
+    btn.addEventListener('click', e => {
+      e.preventDefault();
+      triggerDownload(content, `${stem}.geojson`, 'application/geo+json');
+    });
+    strip.appendChild(btn);
+
+  } else if (fmt === 'csv') {
+    const content = buildCSV(features, crsLabel);
+    const size = (content.length / 1024).toFixed(1);
+    const btn = document.createElement('a');
+    btn.className = 'dl-btn';
+    btn.href = '#';
+    btn.innerHTML = `
+      <svg viewBox="0 0 24 24"><path d="M19 9h-4V3H9v6H5l7 7 7-7zm-7 11H5v2h14v-2h-7z"/></svg>
+      Download CSV
+      <span class="dl-meta">${features.length} rows · ${size} KB · ${crsLabel}</span>`;
+    btn.addEventListener('click', e => {
+      e.preventDefault();
+      triggerDownload(content, `${stem}.csv`, 'text/csv');
+    });
+    strip.appendChild(btn);
+
+  } else if (fmt === 'dxf') {
+    const layerField = document.getElementById('dxf-layer-field').value;
+    const addLabels = document.getElementById('dxf-text').checked;
+    const content = buildDXF(features, crsLabel, layerField, addLabels, ssmFeatures, rmFeatures);
+    const size = (content.length / 1024).toFixed(1);
+    const btn = document.createElement('a');
+    btn.className = 'dl-btn';
+    btn.href = '#';
+    btn.innerHTML = `
+      <svg viewBox="0 0 24 24"><path d="M19 9h-4V3H9v6H5l7 7 7-7zm-7 11H5v2h14v-2h-7z"/></svg>
+      Download DXF (R12)
+      <span class="dl-meta">${features.length} polylines · ${size} KB · ${crsLabel}</span>`;
+    btn.addEventListener('click', e => {
+      e.preventDefault();
+      triggerDownload(content, `${stem}.dxf`, 'application/dxf');
+    });
+    strip.appendChild(btn);
+
+    const note = document.createElement('div');
+    note.style.cssText = 'font-family:var(--mono);font-size:10px;color:var(--ink-soft);padding:6px 2px;line-height:1.5;';
+    note.textContent = (crsLabel === 'EPSG:4326' || crsLabel === 'EPSG:4283' || crsLabel === 'EPSG:7844')
+      ? '↳ DXF coordinates are geographic (lat/lon degrees) — for 12d, use a projected CRS (PCG2020/MGA) instead.'
+      : `↳ R12 DXF, units = metres. Layers: LANDGATE_CADASTRE (polygons)${(ssmFeatures&&ssmFeatures.length)?', SSM_BM (points)':''}${(rmFeatures&&rmFeatures.length)?', REF_MARKS (points)':''}. In 12d: File ▸ Import ▸ Dxf.`;
+    strip.appendChild(note);
+
+  } else if (fmt === 'kml') {
+    const content = buildKML(features, ssmFeatures, rmFeatures);
+    const size = (content.length / 1024).toFixed(1);
+    const btn = document.createElement('a');
+    btn.className = 'dl-btn'; btn.href = '#';
+    btn.innerHTML = `<svg viewBox="0 0 24 24"><path d="M19 9h-4V3H9v6H5l7 7 7-7zm-7 11H5v2h14v-2h-7z"/></svg>
+      Download KML <span class="dl-meta">${features.length} parcels · ${size} KB · WGS84</span>`;
+    btn.addEventListener('click', e => { e.preventDefault(); triggerDownload(content, `${stem}.kml`, 'application/vnd.google-earth.kml+xml'); });
+    strip.appendChild(btn);
+    const note = document.createElement('div');
+    note.style.cssText = 'font-family:var(--mono);font-size:10px;color:var(--ink-soft);padding:6px 2px;line-height:1.5;';
+    note.textContent = '↳ KML uses WGS84/GDA2020 geographic coordinates per the KML standard. Open in Google Earth, Maps, or drone planning software.';
+    strip.appendChild(note);
+
+  } else if (fmt === 'shp') {
+    const btn = document.createElement('a');
+    btn.className = 'dl-btn'; btn.href = '#';
+    btn.innerHTML = `<svg viewBox="0 0 24 24"><path d="M19 9h-4V3H9v6H5l7 7 7-7zm-7 11H5v2h14v-2h-7z"/></svg>
+      Download Shapefile (.zip) <span class="dl-meta">${features.length} parcels · ${crsLabel}</span>`;
+    btn.addEventListener('click', async e => {
+      e.preventDefault();
+      btn.textContent = 'Generating…';
+      try {
+        const zipBytes = await buildShapefileZip(features, crsLabel, ssmFeatures, rmFeatures, stem);
+        triggerDownload(zipBytes, `${stem}_shp.zip`, 'application/zip');
+      } catch(err) { alert('Shapefile error: ' + err.message); }
+      btn.innerHTML = `<svg viewBox="0 0 24 24"><path d="M19 9h-4V3H9v6H5l7 7 7-7zm-7 11H5v2h14v-2h-7z"/></svg>
+        Download Shapefile (.zip) <span class="dl-meta">${features.length} parcels · ${crsLabel}</span>`;
+    });
+    strip.appendChild(btn);
+    const note = document.createElement('div');
+    note.style.cssText = 'font-family:var(--mono);font-size:10px;color:var(--ink-soft);padding:6px 2px;line-height:1.5;';
+    note.textContent = `↳ ZIP contains .shp/.shx/.dbf/.prj files with ${crsLabel} projection. Open in QGIS, ArcGIS, or MapInfo.`;
+    strip.appendChild(note);
+
+  } else if (fmt === 'gpkg') {
+    const btn = document.createElement('a');
+    btn.className = 'dl-btn'; btn.href = '#';
+    btn.innerHTML = `<svg viewBox="0 0 24 24"><path d="M19 9h-4V3H9v6H5l7 7 7-7zm-7 11H5v2h14v-2h-7z"/></svg>
+      Download GeoPackage package (.zip) <span class="dl-meta">${features.length} parcels · ${crsLabel}</span>`;
+    btn.addEventListener('click', async e => {
+      e.preventDefault();
+      btn.textContent = 'Generating…';
+      try {
+        const zipBytes = await buildGeoPackageZip(features, crsLabel, ssmFeatures, rmFeatures, stem);
+        triggerDownload(zipBytes, `${stem}_gpkg.zip`, 'application/zip');
+      } catch(err) { alert('GeoPackage error: ' + err.message); }
+      btn.innerHTML = `<svg viewBox="0 0 24 24"><path d="M19 9h-4V3H9v6H5l7 7 7-7zm-7 11H5v2h14v-2h-7z"/></svg>
+        Download GeoPackage package (.zip) <span class="dl-meta">${features.length} parcels · ${crsLabel}</span>`;
+    });
+    strip.appendChild(btn);
+    const note = document.createElement('div');
+    note.style.cssText = 'font-family:var(--mono);font-size:10px;color:var(--ink-soft);padding:6px 2px;line-height:1.5;';
+    note.textContent = '↳ GeoJSON files with CRS headers + README. Drag into QGIS and Save As GeoPackage, or run: ogr2ogr -f GPKG output.gpkg <file>.geojson';
+    strip.appendChild(note);
+  }
+}
+
+// ── DXF layer-field population & live re-render ───────────────────────────
+let lastFeatures = null, lastCrsLabel = null, lastSlug = null;
+let lastSsmFeatures = null, lastRmFeatures = null;
+let lastBbox = null;
+
+function populateLayerFieldOptions(features) {
+  const sel = document.getElementById('dxf-layer-field');
+  sel.innerHTML = '<option value="">Single layer (LANDGATE_CADASTRE)</option>';
+  const allKeys = new Set();
+  features.slice(0, 50).forEach(f => Object.keys(f.properties || {}).forEach(k => allKeys.add(k)));
+  // Prioritise common cadastral attribute names
+  const priority = ['lot_number','LOT_NUMBER','plan_number','PLAN_NUMBER','cad_tenure','TENURE','land_act'];
+  const sorted = [...allKeys].sort((a,b) => {
+    const pa = priority.indexOf(a), pb = priority.indexOf(b);
+    if (pa !== -1 || pb !== -1) return (pa === -1 ? 999 : pa) - (pb === -1 ? 999 : pb);
+    return a.localeCompare(b);
+  });
+  for (const k of sorted) {
+    const opt = document.createElement('option');
+    opt.value = k; opt.textContent = k;
+    sel.appendChild(opt);
+  }
+  lastFeatures = features;
+}
+
+// Re-render download strip if format/CRS/options change after a fetch
+['fmt-geojson','fmt-csv','fmt-dxf','fmt-kml','fmt-shp','fmt-gpkg'].forEach(id => {
+  document.getElementById(id).addEventListener('change', () => {
+    if (lastFeatures) showDownloadStrip(lastFeatures, document.getElementById('crs').value, lastSlug, lastSsmFeatures, lastRmFeatures);
+  });
+});
+document.getElementById('dxf-layer-field').addEventListener('change', () => {
+  if (lastFeatures) showDownloadStrip(lastFeatures, document.getElementById('crs').value, lastSlug, lastSsmFeatures, lastRmFeatures);
+});
+document.getElementById('dxf-text').addEventListener('change', () => {
+  if (lastFeatures) showDownloadStrip(lastFeatures, document.getElementById('crs').value, lastSlug, lastSsmFeatures, lastRmFeatures);
+});
+document.getElementById('crs').addEventListener('change', () => {
+  if (lastFeatures) showDownloadStrip(lastFeatures, document.getElementById('crs').value, lastSlug, lastSsmFeatures, lastRmFeatures);
+  const crs = document.getElementById('crs').value;
+  const isGda94 = ['EPSG:4283','EPSG:4326','EPSG:28349','EPSG:28350','EPSG:28351','EPSG:10464'].includes(crs);
+  document.getElementById('ssm-gda94-note').style.display = isGda94 ? 'block' : 'none';
+});
+
+// ── Run ───────────────────────────────────────────────────────────────────
+document.getElementById('run-btn').addEventListener('click', async () => {
+  clearLog();
+  document.getElementById('download-strip').classList.remove('visible');
+  document.getElementById('download-strip').innerHTML = '';
+  if (cadastreLayer) { map.removeLayer(cadastreLayer); cadastreLayer = null; }
+  if (bboxRect) { map.removeLayer(bboxRect); bboxRect = null; }
+  if (ssmLayer) { map.removeLayer(ssmLayer); ssmLayer = null; }
+  if (rmLayer)  { map.removeLayer(rmLayer);  rmLayer  = null; }
+  if (labelLayer) { map.removeLayer(labelLayer); labelLayer = null; }
+  updateCounter(0);
+  lastFeatures = null;
+  lastSsmFeatures = null;
+  lastRmFeatures = null;
+  if (geocodeMarker) { map.removeLayer(geocodeMarker); geocodeMarker = null; }
+
+  const btn = document.getElementById('run-btn');
+  btn.disabled = true;
+  btn.textContent = 'Extracting…';
+
+  const token = document.getElementById('token').value.trim() || null;
+  const crsEl = document.getElementById('crs');
+  const crsLabel = crsEl.value;
+  const crsName = crsEl.options[crsEl.selectedIndex].text;
+
+  let bbox, addressSlug = 'extract';
+
+  try {
+    if (activeTab === 'addr') {
+      const addr = document.getElementById('address').value.trim();
+      const radius = parseFloat(document.getElementById('radius').value) || 500;
+      if (!addr) throw new Error('Please enter an address or place name.');
+      log(`Geocoding "${addr}"…`);
+      const { lon, lat, display } = await geocode(addr);
+      log(`  ↳ ${lat.toFixed(6)}, ${lon.toFixed(6)}`, 'ok');
+      log(`  ↳ ${display.split(',').slice(0,3).join(',').trim()}`, 'dim');
+      bbox = bboxFromRadius(lon, lat, radius);
+      addressSlug = addr.replace(/[^a-z0-9]/gi, '_').toLowerCase().slice(0, 30);
+      map.setView([lat, lon], 15);
+      if (geocodeMarker) map.removeLayer(geocodeMarker);
+      geocodeMarker = L.circleMarker([lat, lon], {
+        radius: 5, color: '#E8DCC8', weight: 2, fillColor: '#C0392B', fillOpacity: 1
+      }).addTo(map).bindTooltip('Geocoded address', { permanent: false });
+    } else if (activeTab === 'bbox') {
+      const xmin = parseFloat(document.getElementById('xmin').value);
+      const ymin = parseFloat(document.getElementById('ymin').value);
+      const xmax = parseFloat(document.getElementById('xmax').value);
+      const ymax = parseFloat(document.getElementById('ymax').value);
+      if ([xmin,ymin,xmax,ymax].some(isNaN)) throw new Error('Enter all four bounding box values.');
+      bbox = [xmin, ymin, xmax, ymax];
+      addressSlug = `bbox_${xmin}_${ymin}`.replace(/[^a-z0-9_-]/g, '').slice(0,30);
+    } else {
+      // Draw on map
+      if (!drawnLayer) throw new Error('Draw a rectangle or polygon on the map first.');
+      const latlngs = drawnLayer.getLatLngs()[0];
+      const lons = latlngs.map(p => p.lng), lats = latlngs.map(p => p.lat);
+      bbox = [Math.min(...lons), Math.min(...lats), Math.max(...lons), Math.max(...lats)];
+      addressSlug = drawnGeomType === 'rectangle' ? 'drawn_rect' : 'drawn_poly';
+
+      if (drawnGeomType === 'polygon') {
+        drawnPolygonRing = latlngs.map(p => [p.lng, p.lat]);
+        // close ring
+        const first = drawnPolygonRing[0], last = drawnPolygonRing[drawnPolygonRing.length-1];
+        if (first[0] !== last[0] || first[1] !== last[1]) drawnPolygonRing.push(first);
+      } else {
+        drawnPolygonRing = null;
+      }
+    }
+
+    log(`BBox: ${bbox.map(v=>v.toFixed(5)).join(', ')}`, 'dim');
+    log(`Layer: ${token ? 'Subscription (full attributes)' : 'Public LGATE-001'}`);
+    log(`CRS: ${crsName}`);
+    log('');
+
+    let features = await fetchAll(bbox, token);
+
+    if (drawnPolygonRing) {
+      const before = features.length;
+      features = features.filter(f => {
+        const ring = f.geometry?.type === 'Polygon' ? f.geometry.coordinates[0]
+                    : f.geometry?.type === 'MultiPolygon' ? f.geometry.coordinates[0][0]
+                    : null;
+        if (!ring) return true;
+        const c = ringCentroid(ring);
+        return pointInPolygon(c, drawnPolygonRing);
+      });
+      log(`Clipped to drawn polygon: ${before} → ${features.length} parcels`, 'dim');
+    }
+
+    if (!features.length) {
+      log('No features returned. Try a larger radius or different location.', 'err');
+    } else {
+      log(`Fetched ${features.length} cadastral features.`, 'ok');
+      drawFeatures(features, bbox);
+      populateLayerFieldOptions(features);
+      _lotLabelHook(features);
+      showDownloadStrip(features, crsLabel, addressSlug, lastSsmFeatures, lastRmFeatures);
+      lastSlug = addressSlug;
+      lastBbox = bbox;
+      closePanelOnMobile();
+    }
+
+    // ── SSM / BM marks ────────────────────────────────────────────────────
+    if (document.getElementById('ssm-enable').checked) {
+      try {
+        log('Fetching SSM/BM marks (LGATE-076)…', 'dim');
+        const ssmFeatures = await fetchPoints(SSM_URL, bbox, token);
+        log(`  ↳ ${ssmFeatures.length} SSM/BM marks`, ssmFeatures.length ? 'ok' : 'dim');
+        lastSsmFeatures = ssmFeatures;
+        ssmLayer = drawSSMLayer(ssmFeatures, document.getElementById('ssm-color').value,
+                                ssmLayer, 'geodetic_point_name');
+        if (lastFeatures) showDownloadStrip(lastFeatures, crsLabel, lastSlug, lastSsmFeatures, lastRmFeatures);
+      } catch (e) {
+        log(`SSM fetch failed: ${e.message}`, 'err');
+      }
+    }
+
+    // ── Reference Marks ────────────────────────────────────────────────────
+    if (document.getElementById('rm-enable').checked) {
+      try {
+        log('Fetching Reference Marks (LGATE-199)…', 'dim');
+        const rmFeatures = await fetchPoints(RM_URL, bbox, token);
+        log(`  ↳ ${rmFeatures.length} reference marks`, rmFeatures.length ? 'ok' : 'dim');
+        lastRmFeatures = rmFeatures;
+        rmLayer = drawSSMLayer(rmFeatures, document.getElementById('rm-color').value,
+                               rmLayer, 'reference_mark_name');
+        if (lastFeatures) showDownloadStrip(lastFeatures, crsLabel, lastSlug, lastSsmFeatures, lastRmFeatures);
+      } catch (e) {
+        log(`RM fetch failed: ${e.message}`, 'err');
+      }
+    }
+
+  } catch (err) {
+    log(`Error: ${err.message}`, 'err');
+  } finally {
+    btn.disabled = false;
+    btn.textContent = 'Extract cadastral data';
+  }
+});
+
+// ── Mobile swipe gesture on panel ────────────────────────────────────────
+(function() {
+  let startY = null;
+  const panel = document.getElementById('panel');
+  panel.addEventListener('touchstart', e => { startY = e.touches[0].clientY; }, { passive: true });
+  panel.addEventListener('touchend', e => {
+    if (startY === null) return;
+    const dy = e.changedTouches[0].clientY - startY;
+    if (dy < -40) panel.classList.add('open');    // swipe up → open
+    if (dy > 40) panel.classList.remove('open');  // swipe down → close
+    startY = null;
+  }, { passive: true });
+})();
+
+// ── Mobile panel toggle ───────────────────────────────────────────────────
+function togglePanel() {
+  document.getElementById('panel').classList.toggle('open');
+}
+// Close panel after successful extract on mobile
+function closePanelOnMobile() {
+  if (window.innerWidth <= 768) {
+    setTimeout(() => document.getElementById('panel').classList.remove('open'), 600);
+  }
+}
+
+// ── Enter key on address ──────────────────────────────────────────────────
+document.getElementById('address').addEventListener('keydown', e => {
+  if (e.key === 'Enter') document.getElementById('run-btn').click();
+});
+
+// ── Lot / plan labels ─────────────────────────────────────────────────────
+let labelLayer = null;
+
+async function buildLabelLayer(features, bbox) {
+  if (labelLayer) { map.removeLayer(labelLayer); labelLayer = null; }
+  if (!bbox) { log('Lot labels: no extraction bbox available — run an extraction first.', 'err'); return; }
+  try {
+    log('Fetching plan labels (LGATE-283)…', 'dim');
+    const labelFeatures = await fetchPoints(LABELS_URL, bbox, null);
+    log(`  ↳ ${labelFeatures.length} label features returned`, labelFeatures.length ? 'ok' : 'err');
+
+    if (!labelFeatures.length) {
+      log('  ↳ No labels in this area, or the layer/field name has changed.', 'err');
+      return;
+    }
+
+    // Diagnostic: show actual property keys from the first feature so we can
+    // verify the field name if labels still don't render.
+    const sampleKeys = Object.keys(labelFeatures[0].properties || {});
+    log(`  ↳ Sample fields: ${sampleKeys.join(', ')}`, 'dim');
+
+    const markers = labelFeatures.map(f => {
+      const p = f.properties || {};
+      // Try several likely field name variants in case of case/naming differences
+      const text = p.label_text || p.LABEL_TEXT || p.labeltext || p.LabelText || p.text || '';
+      if (!text || !f.geometry) return null;
+      const [lon, lat] = f.geometry.coordinates;
+      const icon = L.divIcon({
+        className: '',
+        html: `<div style="font:bold 9px/1.3 Arial,sans-serif; color:#FFD700; text-shadow:0 0 3px #000,0 0 3px #000; white-space:nowrap; transform:translate(-50%,-50%); pointer-events:none;">${text}</div>`,
+        iconSize: [0, 0],
+        iconAnchor: [0, 0],
+      });
+      return L.marker([lat, lon], { icon, interactive: false });
+    }).filter(Boolean);
+
+    log(`  ↳ ${markers.length} labels with text rendered on map`, markers.length ? 'ok' : 'err');
+    if (markers.length) labelLayer = L.layerGroup(markers).addTo(map);
+
+  } catch(e) {
+    log(`Plan labels fetch failed: ${e.message}`, 'err');
+  }
+}
+
+document.getElementById('lot-labels').addEventListener('change', () => {
+  if (document.getElementById('lot-labels').checked) {
+    if (lastFeatures) buildLabelLayer(lastFeatures, lastBbox);
+  } else {
+    if (labelLayer) { map.removeLayer(labelLayer); labelLayer = null; }
+  }
+});
+
+// Re-build labels when CRS changes (centroid is in geographic, so no-op here — labels always geographic)
+// Re-build labels when new features arrive — wire into run handler via existing populateLayerFieldOptions hook
+
+// ── Measurement tool ──────────────────────────────────────────────────────
+let measureActive = false;
+let measureLayer = null;
+let measurePoints = [];
+let measureLine = null;
+const RAD = Math.PI / 180;
+
+function haversine([lon1, lat1], [lon2, lat2]) {
+  const R = 6371000;
+  const dLat = (lat2 - lat1) * RAD, dLon = (lon2 - lon1) * RAD;
+  const a = Math.sin(dLat/2)**2 + Math.cos(lat1*RAD) * Math.cos(lat2*RAD) * Math.sin(dLon/2)**2;
+  return R * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1-a));
+}
+
+function fmtDist(m) {
+  return m < 1000 ? `${m.toFixed(3)} m` : `${(m/1000).toFixed(4)} km`;
+}
+
+function fmtArea(m2) {
+  return m2 < 10000 ? `${m2.toFixed(1)} m²` : `${(m2/10000).toFixed(4)} ha`;
+}
+
+function polygonArea(pts) {
+  let area = 0;
+  for (let i = 0; i < pts.length; i++) {
+    const [x1,y1] = pts[i], [x2,y2] = pts[(i+1) % pts.length];
+    area += (x2 - x1) * (y2 + y1);
+  }
+  const latMid = pts.reduce((s,p) => s + p[1], 0) / pts.length;
+  const mPerLon = 111320 * Math.cos(latMid * RAD);
+  const mPerLat = 111320;
+  return Math.abs(area) / 2 * mPerLon * mPerLat;
+}
+
+function updateMeasureDisplay() {
+  if (measurePoints.length < 2) return;
+  let totalDist = 0;
+  for (let i = 1; i < measurePoints.length; i++) totalDist += haversine(measurePoints[i-1], measurePoints[i]);
+  let info = `Distance: ${fmtDist(totalDist)}`;
+  if (measurePoints.length > 2) info += `  |  Area: ${fmtArea(polygonArea(measurePoints))}`;
+  document.getElementById('coord-readout').textContent = info;
+  document.getElementById('coord-readout').style.display = 'block';
+}
+
+function onMeasureClick(e) {
+  // Ignore if a draw tool is active
+  if (currentDrawHandler) return;
+  const { lat, lng } = e.latlng;
+  measurePoints.push([lng, lat]);
+  if (!measureLayer) measureLayer = L.layerGroup().addTo(map);
+
+  L.circleMarker([lat, lng], { radius: 4, color: '#FFD700', fillColor: '#FFD700', fillOpacity: 1, weight: 1 }).addTo(measureLayer);
+
+  if (measurePoints.length > 1) {
+    const prev = measurePoints[measurePoints.length - 2];
+    const dist = haversine(prev, [lng, lat]);
+    const midLon = (prev[0] + lng) / 2, midLat = (prev[1] + lat) / 2;
+    L.marker([midLat, midLon], {
+      icon: L.divIcon({ className:'', html:`<div style="font:bold 10px monospace;color:#FFD700;text-shadow:0 0 3px #000;white-space:nowrap;transform:translate(-50%,-50%)">${fmtDist(dist)}</div>`, iconSize:[0,0], iconAnchor:[0,0] }),
+      interactive: false
+    }).addTo(measureLayer);
+  }
+
+  if (measureLine) measureLayer.removeLayer(measureLine);
+  measureLine = L.polyline(measurePoints.map(p => [p[1],p[0]]), { color: '#FFD700', weight: 2, dashArray: '5 4' });
+  measureLayer.addLayer(measureLine);
+  updateMeasureDisplay();
+}
+
+function clearMeasure() {
+  if (measureLayer) { map.removeLayer(measureLayer); measureLayer = null; }
+  measurePoints = []; measureLine = null;
+  document.getElementById('coord-readout').style.display = 'none';
+}
+
+function toggleMeasure() {
+  const btn = document.getElementById('tool-measure');
+  if (measureActive) {
+    map.off('click', onMeasureClick);
+    map.doubleClickZoom.enable();
+    map.getContainer().style.cursor = '';
+    btn.classList.remove('active');
+    measureActive = false;
+  } else {
+    // Cancel draw tool and coord picker if active
+    if (currentDrawHandler) { currentDrawHandler.disable(); currentDrawHandler = null; setDrawBtnActive(null); }
+    if (coordActive) toggleCoordPicker();
+    clearMeasure();
+    map.doubleClickZoom.disable(); // prevent zoom on double-click to finish
+    map.on('click', onMeasureClick);
+    map.getContainer().style.cursor = 'crosshair';
+    btn.classList.add('active');
+    measureActive = true;
+  }
+}
+
+// Double-click to finish measure (when active), or clear (when inactive)
+map.on('dblclick', (e) => {
+  if (measureActive) {
+    toggleMeasure(); // finish — leaves measurements on screen
+  } else if (measureLayer) {
+    clearMeasure();
+  }
+});
+
+// ── Coordinate picker ─────────────────────────────────────────────────────
+let coordActive = false;
+
+function onCoordClick(e) {
+  // Ignore if a draw tool is active
+  if (currentDrawHandler) return;
+  const { lat, lng } = e.latlng;
+  const crs = document.getElementById('crs').value;
+  const [px, py] = reprojectCoord([lng, lat], crs);
+  const isGeo = ['EPSG:7844','EPSG:4283','EPSG:4326'].includes(crs);
+  const readout = document.getElementById('coord-readout');
+
+  let lines;
+  if (isGeo) {
+    lines = `Lat: ${lat.toFixed(8)}°   Lon: ${lng.toFixed(8)}°   [${crs}]`;
+  } else {
+    lines = `E: ${px.toFixed(3)} m   N: ${py.toFixed(3)} m   [${crs}]`;
+  }
+  readout.innerHTML = lines + `<br><span style="color:var(--ink-soft);font-size:10px;">GDA2020 geo: ${lat.toFixed(8)}, ${lng.toFixed(8)}</span>`;
+  readout.style.display = 'block';
+
+  const mk = L.circleMarker([lat, lng], { radius: 6, color: '#00BFFF', fillColor: '#00BFFF', fillOpacity: 0.6, weight: 2 }).addTo(map);
+  setTimeout(() => map.removeLayer(mk), 3000);
+}
+
+function toggleCoordPicker() {
+  const btn = document.getElementById('tool-coord');
+  if (coordActive) {
+    map.off('click', onCoordClick);
+    map.getContainer().style.cursor = '';
+    btn.classList.remove('active');
+    document.getElementById('coord-readout').style.display = 'none';
+    coordActive = false;
+  } else {
+    // Cancel draw tool and measure if active
+    if (currentDrawHandler) { currentDrawHandler.disable(); currentDrawHandler = null; setDrawBtnActive(null); }
+    if (measureActive) toggleMeasure();
+    map.on('click', onCoordClick);
+    map.getContainer().style.cursor = 'crosshair';
+    btn.classList.add('active');
+    btn.title = 'Click anywhere on the map to get coordinates in your chosen CRS';
+    coordActive = true;
+  }
+}
+
+// Wire lot labels into run handler — called after each successful extraction
+// Note: this extends the existing populateLayerFieldOptions using a flag
+// rather than wrapping it (wrapping causes infinite recursion due to hoisting)
+const _lotLabelHook = (features) => {
+  if (document.getElementById('lot-labels').checked) {
+    buildLabelLayer(features, lastBbox);
+  }
+};
+
+</script>
+</body>
+</html>
